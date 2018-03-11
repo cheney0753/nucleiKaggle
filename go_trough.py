@@ -83,7 +83,7 @@ for ipc in range(epoch):
       
       output_ = cnnNet(image_)
 #      loss = diceLoss(mask_, output_)
-      loss = diceLoss( output_, mask_>0)
+      loss = IoU_mean( output_, mask_>0.1)
       loss.backward()
       optimizer.step()
       
