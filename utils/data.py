@@ -208,5 +208,5 @@ class TestData(unitest.TestCase):
     def test_Rescale(self):
         rcl = rescale()
        
-if __name__ = '__main__':
+if __name__ == '__main__':
     
