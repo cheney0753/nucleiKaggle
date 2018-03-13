@@ -4,17 +4,28 @@ Created on Sun Mar 11 14:50:26 2018
 
 @author: zhong
 """
-from torch.utils.data import Dataset, DataLoader
+
+from __future__ import absolute_import
+
+
 import numpy as np
+
 from skimage import io, transform
+
+import torch
+from torch.utils.data import Dataset, DataLoader
+
 import pandas as pd
 import time, os, glob, platform
-from utils.image import isChromatic
+import unittest
 
-import unitest
 IMG_CHANNELS = 3
 
-__all__ = ('trainDf', 'chromaticDataset' )
+from nuclei.utils.image import isChromatic
+
+
+
+__all__ = ('TrainDf', 'ChromaticDataset', 'Rescale', 'RandomCrop', 'ToTensor' )
 
 def _read_and_stack(in_img_list):
       return np.sum(np.stack([ io.imread(c_img) for c_img in in_img_list]), 0) / 255.0
@@ -186,8 +197,8 @@ class RandomCrop(object):
         image = image[top: top + new_h,
                       left: left + new_w]
 
-        landmarks = landmarks - [left, top]
-
+        mask = mask[top: top + new_h,
+                      left: left + new_w]
         return {'images': image, 'masks': mask}
     
 class ToTensor(object):
@@ -201,12 +212,12 @@ class ToTensor(object):
         # torch image: C X H X W
         image = image.transpose((2, 0, 1))
         return {'images': torch.from_numpy(image),
-                'masks': torch.from_numpy(landmarks)}
+                'masks': torch.from_numpy(mask)}
         
-class TestData(unitest.TestCase):
+class TestData(unittest.TestCase):
     
     def test_Rescale(self):
-        rcl = rescale()
+        rcl = Rescale(100)
        
 if __name__ == '__main__':
-    
+    unittest.main()    

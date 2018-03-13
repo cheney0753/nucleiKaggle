@@ -12,6 +12,7 @@ from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 
+__all__ = ('chromaticNet', 'monochromNet')
 class chromaticNet(nn.Module):
     
     def __init__(self):

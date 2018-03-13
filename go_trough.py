@@ -19,10 +19,9 @@ import os, sys
 #%%
 cwd = %pwd
 sys.path.append(os.path.abspath(os.path.join( os.pardir, cwd)))
-from kernel import cnnModule
-from kernel.lossFunc import diceLoss, IoU_mean
+from nuclei.kernel import cnnModule
+from nuclei.kernel.lossFunc import diceLoss, IoU_mean
 from torch.autograd import Variable
-from utils import image, data
 import torch.optim as optim
 #%%
 %%time

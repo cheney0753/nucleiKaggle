@@ -10,6 +10,8 @@ import numpy as np
 from torch.autograd import Variable
 import torch
 
+__all__ = ('diceLoss', 'IoU_mean')
+
 def diceLoss(input_, target_):
     """
     Dice loss function

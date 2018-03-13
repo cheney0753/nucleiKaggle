@@ -1,0 +1,5 @@
+nuclei.egg-info/PKG-INFO
+nuclei.egg-info/SOURCES.txt
+nuclei.egg-info/dependency_links.txt
+nuclei.egg-info/not-zip-safe
+nuclei.egg-info/top_level.txt

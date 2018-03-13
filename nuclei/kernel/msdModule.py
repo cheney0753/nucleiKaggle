@@ -7,11 +7,16 @@ Created on Fri Mar  9 10:25:54 2018
 
 Email: zhchzhong@gmail.com
 """
-from dens
-class msdModule(nn.Module):
+from torch.autograd import Variable
+import torch.nn as nn
+import torch.nn.functional as F
+
+__all__ = ('msdNet', )
+
+class msdNet(nn.Module):
     
     def __init__(self):
-        super(chromaticNet, self).__init__()
+        super(msdNet, self).__init__()
         
         
         # 3 input image channel, 8 output channels, 3*3 square convolution

@@ -6,6 +6,10 @@ This is a temporary script file.
 """
 IMG_CHANNELS = 3
 import numpy as np
+
+__all__ = ('isChromatic', )
+
+
 def isChromatic( img ):
     """ 
     return if an image is chromatic or not
