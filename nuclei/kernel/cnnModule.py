@@ -12,11 +12,11 @@ from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 
-__all__ = ('chromaticNet', 'monochromNet')
-class chromaticNet(nn.Module):
+__all__ = ('ChromaticNet', 'MonochromNet')
+class ChromaticNet(nn.Module):
     
     def __init__(self):
-        super(chromaticNet, self).__init__()
+        super(ChromaticNet, self).__init__()
         
         
         # 3 input image channel, 8 output channels, 3*3 square convolution
@@ -33,7 +33,7 @@ class chromaticNet(nn.Module):
             nn.Conv2d(32, 16, 1),
             nn.Conv2d(16, 1, 1),
             nn.Sigmoid()
-            )
+            ).cuda()
         #   ).cuda()
     def forward(self, x):
       
@@ -49,10 +49,10 @@ class chromaticNet(nn.Module):
             
         return num_features
       
-class monochromNet(nn.Module):
+class MonochromNet(nn.Module):
     
     def __init__(self):
-        super(chromaticNet, self).__init__()
+        super(MonochromNet, self).__init__()
         # 3 input image channel, 8 output channels, 3*3 square convolution
         # kernel
         self.conv1  = nn.Conv2d(1, 1, 3)

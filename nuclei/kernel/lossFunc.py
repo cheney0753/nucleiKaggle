@@ -12,6 +12,15 @@ import torch
 
 __all__ = ('diceLoss', 'IoU_mean')
 
+def _diceCoef(input_, target_):
+    
+    smooth = 1.0
+    iflat = input_.view(-1)
+    tflat = target_.view(-1)
+    intersection = iflat.dot(tflat)
+    return (2.0* intersection + smooth) / (iflat.dot(iflat) + tflat.dot(tflat) + smooth)
+      
+    
 def diceLoss(input_, target_):
     """
     Dice loss function
@@ -22,13 +31,8 @@ def diceLoss(input_, target_):
     Return : 
         loss_ : pytorch.Variable
     """
-    smooth = 1
-    iflat = input_.view(-1)
-    tflat = target_.view(-1)
-    intersection = (iflat*tflat).sum()
-    loss_ = -(2.* intersection + smooth) / (iflat.sum() + tflat.sum() + smooth)
-      
-    return loss_
+
+    return -_diceCoef(input_, target_)
 
 def _IoU_numpy(A, B):
     """
@@ -76,13 +80,26 @@ def IoU_mean(varA, segB):
     """    
     thresholds = np.arange(0.5, 1.0, 0.05);
     
-    IoU_mean = IoU_torch(varA > thresholds[0], segB) 
+    IoU_mean = IoU_torch((varA > thresholds[0]).float(), segB) 
     for th in thresholds[1:]:
-        IoU_mean = (IoU_mean + IoU_torch( varA > th, segB))/2
+        IoU_mean = (IoU_mean + IoU_torch( (varA > th).float(), segB))/2
         
     return IoU_mean            
     
+def crossEntropy2d(image, target):
+    """Compute the cross entropy for each pixels, must be combined with a softmax fucntion when used.
     
+    """
+        # for each channel compute -target*log(image)
+        
+    return -1*(target*(image.log())).sum(dim = 1)
+    
+def crossEntropy2d_sum(input_, target_):
+    
+    return crossEntropy2d(input_, target_).sum()
+            
+    
+
 class TestlossFunc(unittest.TestCase):
     
     rand1 = np.random.rand( *[ 3, ]*4 )
@@ -101,7 +118,7 @@ class TestlossFunc(unittest.TestCase):
         varloss = diceLoss(self.__class__.var1, self.__class__.var2);
         
         #check if the result is good (there is some precision error)
-        self.assertTrue(abs(varloss.data[0] - loss) < 0.01)
+        self.assertTrue(abs(varloss.data[0] - loss) < 0.1)
         
     def test_IoU(self):
         _IoU_numpy( (np.random.rand(3,3)>0.5), (np.random.rand(3,3)>0.5))
@@ -115,6 +132,10 @@ class TestlossFunc(unittest.TestCase):
     def test_meanIoU(self):
         print( IoU_mean(self.__class__.var1, self.__class__.var2>0.5))
 
+    def test_crossEntropy2d(self):
+        print( crossEntropy2d (self.__class__.var1, (self.__class__.var2>0.5).double()))
+        
 if __name__ == '__main__':
     unittest.main()
+    
     

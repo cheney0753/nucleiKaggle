@@ -10,10 +10,10 @@ from __future__ import absolute_import
 
 import numpy as np
 
-from skimage import io, transform
+from skimage import io, transform, util, morphology
 
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 
 import pandas as pd
 import time, os, glob, platform
@@ -25,11 +25,36 @@ from nuclei.utils.image import isChromatic
 
 
 
-__all__ = ('TrainDf', 'ChromaticDataset', 'Rescale', 'RandomCrop', 'ToTensor' )
+__all__ = ('TrainDf', 'NucleiDataset', 'Rescale', 'RandomCrop', 'ToTensor' )
 
 def _read_and_stack(in_img_list):
       return np.sum(np.stack([ io.imread(c_img) for c_img in in_img_list]), 0) / 255.0
 
+def rle_encoding( image):
+    """ Encode a binary image to rle"""
+    
+    bimage = np.where( image.T.flatten()==1)[0] ## transform the image 
+    # The pixels are one-indexed and numbered from top to bottom, then left to right:
+    # 1 is pixel (1,1), 2 is pixel (2,1), 
+    
+    r_length = []
+    prev = -2
+    for b in bimage:
+        if (b > prev+1 ) : r_length += [b+1, 0]
+        r_length[-1] +=1
+        prev = b
+        
+    return r_length
+
+def rle_fromImage(x, cut_off = 0.5):
+    
+    lab_img = morphology.label(x>cut_off)
+    
+    if lab_img.max()<1:
+        lab_img[0,0] = 1 # ensure at least one prediction per image
+        
+    return [rle_encoding(lab_img==i) for i in range(1, lab_img.max()+1)]
+    
 class TrainDf(object):
     
     def __init__( self, data_dir):
@@ -54,7 +79,9 @@ class TrainDf(object):
         
         train_labels['EncodedPixels'] = train_labels['EncodedPixels'].map(lambda en: [x for x in en.split(' ')] )
         
-        print(train_labels.sample()['EncodedPixels'])
+        print('Reading ' + '{}_train_labels.csv'.format(stage_label))
+        
+#        print(train_labels.sample()['EncodedPixels'])
         
         #% load the training files 
         allimagepath = glob.glob(os.path.join( data_dir, '{}_*'.format(stage_label),
@@ -100,6 +127,7 @@ class TrainDf(object):
           
         train_img_df = pd.DataFrame(train_rows)
         
+        print ('Reading images.')
         # read the images and crop from RGBA channels to RGB images
         train_img_df['images'] = train_img_df['images'].map(_read_and_stack).map( lambda x: x[:,:,:IMG_CHANNELS])
         train_img_df['masks'] = train_img_df['masks'].map(_read_and_stack).map(lambda x: x.astype(int))
@@ -109,18 +137,22 @@ class TrainDf(object):
     
         print('Reading time: ', time.time() - clock)
         
+  
         self.df = train_img_df
-        self.df_chromatic = train_img_df.query('chromatic==True')
-        self.df_monochrom = train_img_df.query('chromatic==False')
+        self.labels = train_labels
+
     
     def count(self):
+        """
+        Print the data informations
+        """
         self.df['images'].map( lambda x: x.shape).value_counts()
         print('Chromatic images: ')
         self.df_chromatic['images'].map( lambda x: x.shape).value_counts()
         print('Monochromatic images: ')
         self.df_monochrom['images'].map( lambda x: x.shape).value_counts()
 
-class ChromaticDataset(Dataset):
+class NucleiDataset(Dataset):
   """ chromatic images dataset. """
   
   def __init__(self, df, transform = None):
@@ -132,10 +164,9 @@ class ChromaticDataset(Dataset):
   
   def __getitem__(self, index):
     images = np.moveaxis(self.df.iloc[index]['images'].astype('float32'), -1, 0)
-    masks = np.moveaxis(self.df.iloc[index]['masks'].astype('float32'),  -1, 0)
-
-
-    return (images, masks)
+    mask_ = self.df.iloc[index]['masks'].astype('float32') # np.moveaxis(,  -1, 0)
+    masks_2ch = np.stack( (1 - mask_, mask_), axis=0)
+    return (images, masks_2ch)
   
     
 class Rescale(object):
@@ -200,7 +231,18 @@ class RandomCrop(object):
         mask = mask[top: top + new_h,
                       left: left + new_w]
         return {'images': image, 'masks': mask}
+
+class GaussianNoise(object):
+    """ Add random Gaussian noise to the images
     
+    """
+    def __int__(self, eps = 0.001):
+        self.eps = eps
+    
+    def __call__(self, sample):
+        image =  sample['images']
+        
+        
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
 
@@ -213,6 +255,7 @@ class ToTensor(object):
         image = image.transpose((2, 0, 1))
         return {'images': torch.from_numpy(image),
                 'masks': torch.from_numpy(mask)}
+
         
 class TestData(unittest.TestCase):
     
