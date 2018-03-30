@@ -7,7 +7,7 @@ Created on Fri Mar  2 14:49:10 2018
 
 To exam the nuclei data @ kaggle.com
 """
-%matplotlib qt
+#%matplotlib qt
 isCUDA = True
 #%% Import modules
 import numpy as np
@@ -16,6 +16,8 @@ from torch.utils.data import Dataset, DataLoader
 from scipy import ndimage
 from matplotlib import pyplot as plt
 import os, sys
+import datetime
+now = datetime.datetime.now()
 #%%
 cwd = %pwd
 sys.path.append(os.path.abspath(os.path.join( os.pardir, cwd)))
@@ -31,6 +33,13 @@ from nuclei.utils import data
 
 data_dir  = '/export/scratch1/zhong/PhD_Project/Projects/Kaggle/nuclei/data'
 
+temp_dir = os.path.join( '/export/scratch1/zhong/PhD_Project/Projects/Kaggle/nuclei/temp', '%d%d%d'%(now.year, now.month, now.day))
+
+try:
+    assert os.path.exists(temp_dir)
+except AssertionError:
+    os.mkdir(temp_dir)
+
 traindata = data.TrainDf(data_dir)
 
 chromaticDS = data.NucleiDataset(traindata.df.query('chromatic==True').reset_index())
@@ -40,17 +49,17 @@ dataloader = DataLoader(chromaticDS, batch_size=1,
 
 
 #%%  msdNet
+
+
   
 from nuclei.kernel import msdModule
 from nuclei.kernel.lossFunc import crossEntropy2d_sum
-
 
 msdNet_chro = msdModule.msdNet(3, 2, 20, 3 )
 
 epoch =30
 optimizer = optim.Adam(msdNet_chro.parameters(),   lr= 1e-3)
 optimizer.zero_grad()
-criterion = L1Loss()
 
 for ipc in range(epoch):
     r_loss = 0.0
@@ -93,9 +102,7 @@ for ipc in range(epoch):
           c_msk.imshow(c_row['masks'])
           c_msk.axis('off')
           c_msk.set_title('ground_truth')
-#          c_msk.imshow(msdNet_chro(img_).data[:,1,:,:].cpu().numpy().squeeze())
-#          c_msk.axis('off')
-#          c_msk.set_title('the second part')
+
         
 #%%
 
