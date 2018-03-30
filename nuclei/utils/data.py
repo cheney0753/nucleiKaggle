@@ -7,10 +7,12 @@ Created on Sun Mar 11 14:50:26 2018
 
 from __future__ import absolute_import
 
+from multiprocessing import Pool, Process
 
 import numpy as np
 
 from skimage import io, transform, util, morphology
+from scipy import ndimage as ndi
 
 import torch
 from torch.utils.data import Dataset
@@ -27,8 +29,40 @@ from nuclei.utils.image import isChromatic
 
 __all__ = ('TrainDf', 'NucleiDataset', 'Rescale', 'RandomCrop', 'ToTensor' )
 
+def _multidilation(x, n):
+    for i in range(n):
+        x = morphology.dilation(x)
+    return x
+
 def _read_and_stack(in_img_list):
-      return np.sum(np.stack([ io.imread(c_img) for c_img in in_img_list]), 0) / 255.0
+    return np.sum(np.stack([ io.imread(c_img) for c_img in in_img_list]), 0) / 255.0
+  
+    
+def _read_and_get_boundary( mask_img):
+    msk = io.imread(mask_img)>0
+    return (msk^morphology.binary_erosion(msk)).astype(int)
+
+def _stack_boundary(in_img_list):
+    return (np.sum( np.stack( [_read_and_get_boundary(c_img) for c_img in in_img_list]), 0) > 0 ).astype(float)
+    
+
+def _read_and_get_centroid_image( mask_img):
+    msk = io.imread(mask_img) /255.0
+#    msk = msk/ msk.max()
+    
+    nz =  np.nonzero( msk )
+    
+    ctr = [int(nzi.mean()) for nzi in nz]
+#    print(ctr)
+    img = np.zeros( msk.shape, dtype= float)
+    
+    img[ctr[0], ctr[1]] = 1.0
+    return img
+
+def _stack_centroid_images( in_img_list):
+    return np.sum(np.stack( [ _read_and_get_centroid_image(im) for im in in_img_list]), 0 ) 
+
+
 
 def rle_encoding( image):
     """ Encode a binary image to rle"""
@@ -46,14 +80,27 @@ def rle_encoding( image):
         
     return r_length
 
-def rle_fromImage(x, cut_off = 0.5):
+def watershed_label(mask, labled_ct):
+    """
+    watershed labeling using the predicted centroids
+    """
+    distance = ndi.distance_transform_edt(mask)
     
-    lab_img = morphology.label(x>cut_off)
+    #markers = ndi.label(local_maxi)
+    labels = morphology.watershed(-distance, labled_ct, mask=mask)
+    
+    return labels
+
+
+def rle_fromImage(x, centroids, cut_off = 0.5):
+    
+    lab_img = watershed_label((x>cut_off).astype(float), centroids)
     
     if lab_img.max()<1:
         lab_img[0,0] = 1 # ensure at least one prediction per image
         
     return [rle_encoding(lab_img==i) for i in range(1, lab_img.max()+1)]
+
     
 class TrainDf(object):
     
@@ -127,21 +174,62 @@ class TrainDf(object):
           
         train_img_df = pd.DataFrame(train_rows)
         
-        print ('Reading images.')
-        # read the images and crop from RGBA channels to RGB images
-        train_img_df['images'] = train_img_df['images'].map(_read_and_stack).map( lambda x: x[:,:,:IMG_CHANNELS])
-        train_img_df['masks'] = train_img_df['masks'].map(_read_and_stack).map(lambda x: x.astype(int))
-    
-        # add a column indicating if the images are chromatic or not
-        train_img_df['chromatic'] = train_img_df['images'].map( isChromatic )  
-    
+#        
+#        pool = Pool(processes = 4)
+#        ## oops!! data to large to synchronize
+#        
+#        # using multi-processing to process them
+#
+##        print ('Reading images.')
+#        # read the images and crop from RGBA channels to RGB images
+#        result1 = pool.apply_async(self._read_images, ( train_img_df['images'],))
+##        print('Getting boundary images...')
+#        result2 = pool.apply_async(self._get_boundaries, ( train_img_df['masks'],))    
+##        print( 'Getting dilated centroids...')
+#        result3 = pool.apply_async(self._get_centroids, ( train_img_df['masks'],))
+#        
+#        train_img_df['images'] = result1.get(timeout=99999)
+#        train_img_df['boundaries'] = result2.get(timeout = 99999)
+#        train_img_df['centroids'] = result3.get(timeout = 99999)
+#
+#        pool.close()
+#        pool.join()
+#        
+        
+        train_img_df['images'] = self._read_images(train_img_df['images'])
+        train_img_df['boundaries'] = self._get_boundaries(train_img_df['masks'])
+        train_img_df['centroids'] = self._get_centroids(train_img_df['masks'])
+        
+        print( 'Getting overlapped masks...')
+        train_img_df['masks'] = self._get_masks(train_img_df['masks'])    
+        
+        print('Done.')
         print('Reading time: ', time.time() - clock)
         
-  
+        train_img_df['chromatic'] = train_img_df['images'].map( isChromatic )  
+
         self.df = train_img_df
         self.labels = train_labels
+        
+    def _read_images(self, dSeries):
+        print('Run process (%s)... for reading images' % ( os.getpid()))
+        return dSeries.map(_read_and_stack).map( lambda x: x[:,:,:IMG_CHANNELS])
+
+    def _get_boundaries(self, dSeries):
+        print('Run process (%s)... for geting boundaries' % ( os.getpid()))
+        return dSeries.map( _stack_boundary).map( lambda x: morphology.dilation( x.astype(float)) )
+
 
     
+    def _get_centroids(self, dSeries):
+        print('Run process (%s)... for geting centroids' % ( os.getpid()))
+        return dSeries.map( _stack_centroid_images).map( lambda x:  _multidilation(x, 2))
+
+    def _get_masks(self, dSeries):
+        print('Run process (%s)... for reading masks' % ( os.getpid()))
+        return dSeries.map(_read_and_stack).map(lambda x: x.astype(float))
+
+
     def count(self):
         """
         Print the data informations
@@ -151,6 +239,16 @@ class TrainDf(object):
         self.df_chromatic['images'].map( lambda x: x.shape).value_counts()
         print('Monochromatic images: ')
         self.df_monochrom['images'].map( lambda x: x.shape).value_counts()
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
 
 class NucleiDataset(Dataset):
   """ chromatic images dataset. """
@@ -164,11 +262,16 @@ class NucleiDataset(Dataset):
   
   def __getitem__(self, index):
     images = np.moveaxis(self.df.iloc[index]['images'].astype('float32'), -1, 0)
+    
     mask_ = self.df.iloc[index]['masks'].astype('float32') # np.moveaxis(,  -1, 0)
     masks_2ch = np.stack( (1 - mask_, mask_), axis=0)
-    return (images, masks_2ch)
-  
     
+    centroids = self.df.iloc[index]['masks'].astype('float32')
+    centroids_2ch = np.stack( (1 - centroids, centroids), axis=0)
+
+    return (images, masks_2ch, centroids_2ch)
+  
+     
 class Rescale(object):
     """ Rescale the image in a sample
     -----
@@ -258,9 +361,20 @@ class ToTensor(object):
 
         
 class TestData(unittest.TestCase):
-    
-    def test_Rescale(self):
-        rcl = Rescale(100)
+
+    test_dir = os.path.join( os.path.dirname(os.path.realpath(__file__)), os.pardir, 'testdata/2c840a94d216f5ef4e499b53ae885e9b022cbf639e004ec788436093837823b2/masks')
+
+#    def test_Rescale(self):
+#        rcl = Rescale(100)
        
+    def test_stack_boundary(self):
+        img_list = [ os.path.join( self.__class__.test_dir, img) for img in  os.listdir( self.__class__.test_dir) ]
+        self.assertAlmostEqual( _stack_boundary(img_list).sum(), 3067) # 3067 is the the sum of pixels for this case
+        
+    def test_stack_centroid_images(self):
+        img_list = [ os.path.join( self.__class__.test_dir, img) for img in  os.listdir( self.__class__.test_dir) ]
+
+        self.assertAlmostEqual( _stack_centroid_images( img_list).sum(), len(img_list))
+        
 if __name__ == '__main__':
     unittest.main()    

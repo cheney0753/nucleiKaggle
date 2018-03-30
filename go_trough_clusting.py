@@ -25,6 +25,10 @@ from torch.autograd import Variable
 import torch.optim as optim
 from skimage import measure
 from sklearn import cluster
+
+from scipy import ndimage as ndi
+from skimage.feature import peak_local_max
+from skimage.morphology import watershed
 #%%
 from torch.nn import MSELoss, L1Loss
 from nuclei.utils import data
@@ -33,7 +37,9 @@ data_dir  = '/export/scratch1/zhong/PhD_Project/Projects/Kaggle/nuclei/data_samp
 
 traindata = data.TrainDf(data_dir)
 
+
 chromaticDS = data.NucleiDataset(traindata.df.query('chromatic==True').reset_index())
+
 
 dataloader = DataLoader(chromaticDS, batch_size=4,
                         shuffle=True, num_workers=4)
@@ -53,7 +59,71 @@ for (_, c_row), (c_im, c_lab) in zip( traindata.df.query('chromatic==True').samp
       c_lab.imshow(c_row['centroids'] )
       c_lab.axis('off')
       c_lab.set_title('Labeled')
+#%% get a test for k-means clusterin
 
+# get the number of centroids
+labled_centroids,k_n = measure.label(c_row['centroids'], return_num=True)        
+print('The number of k: {}'.format(k_n))
+_, ax = plt.subplots(1)
+ax.imshow( labled_centroids)
+
+## get the labelings on the overlapping mask based on k_means clustering 
+##%%
+#def _get_centroid( msk):
+#    
+#    nz =  np.nonzero( msk )
+#    
+#    ctr = [int(nzi.mean()) for nzi in nz]
+#
+#    return ctr
+#
+#def km_labeling(mask, c_n, label_centroids):
+#    
+#    mask_stack = np.zeros([ c_n, *(mask.shape)], dtype = float)
+#    init_ct = np.zeros((c_n, 2))
+#    
+#    # get shape (n_samples, n_features)
+#    points = np.transpose(np.array(np.nonzero(mask)))
+#    
+#    # get the initcentroids of 
+#    for c in range(c_n):
+#        
+#        label_c = ( label_centroids == c).astype(float)
+#        
+#        init_ct[c,:] = _get_centroid( label_c)
+#    
+#    
+#    cl = cluster.k_means( points, c_n, init = init_ct)
+#    return init_ct, cl
+#
+#
+#mask = c_row['masks']
+#cl= km_labeling(mask, k_n, labled_centroids)
+#
+#points = np.transpose(np.array(np.nonzero(mask))).astype(int)
+#
+#lb_mask = np.zeros( mask.shape)
+#
+#for lb, p in zip(cl[1][1], points):
+#    lb_mask[p[0],p[1]] = float(lb)
+#    
+#_, ax = plt.subplots(1,3)
+#ax[0].imshow( mask)    
+#ax[1].imshow( lb_mask)    
+#ax[2].imshow( lb_mask - mask)    
+
+#%%
+mask = train_rle_row['masks']
+
+distance = ndi.distance_transform_edt(mask)
+
+#markers = ndi.label(local_maxi)
+labels = watershed(-distance, labled_centroids, mask=mask)
+
+_, ax = plt.subplots(1,3)
+ax[0].imshow( mask)    
+ax[1].imshow( labels)    
+ax[2].imshow( mask - labels)    
 
 #%%
       
@@ -67,8 +137,10 @@ print(cnnNet)
 
 
 _, train_rle_row = next(traindata.df.sample(1).iterrows())
-  
-train_row_rles = data.rle_fromImage(train_rle_row['masks'])
+
+labled_centroids,k_n = measure.label(train_rle_row['centroids'], return_num=True)        
+
+train_row_rles = data.rle_fromImage(train_rle_row['masks'], labled_centroids)
 
 tl_rles = traindata.labels.query('ImageId=="{ImageId}"'.format(**train_rle_row))['EncodedPixels']
 
@@ -87,6 +159,31 @@ for img_rle, train_rle in zip(sorted(train_row_rles, key = lambda x: x[0]),
         else:
             mismatch += 1
 print('Matches: %d, Mismatches: %d, Accuracy: %2.1f%%' % (match, mismatch, 100.0*match/(match+mismatch)))
+
+#%% 
+
+def from_rles(rle, size):
+    
+    masks = np.zeros(size)
+    
+    for r in rle:
+        
+    
+    
+    
+#%%
+mask = train_rle_row['masks']
+
+distance = ndi.distance_transform_edt(mask)
+
+#markers = ndi.label(local_maxi)
+labels = watershed(-distance, labled_centroids, mask=mask)
+
+_, ax = plt.subplots(1,3)
+ax[0].imshow( mask)    
+ax[1].imshow( labels)    
+ax[2].imshow( mask - labels)    
+
 
 #%%  msdNet
   

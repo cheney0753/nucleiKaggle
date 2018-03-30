@@ -1,3 +1,4 @@
+README.rst
 nuclei.egg-info/PKG-INFO
 nuclei.egg-info/SOURCES.txt
 nuclei.egg-info/dependency_links.txt

@@ -29,64 +29,15 @@ from sklearn import cluster
 from torch.nn import MSELoss, L1Loss
 from nuclei.utils import data
 
-data_dir  = '/export/scratch1/zhong/PhD_Project/Projects/Kaggle/nuclei/data_sample'
+data_dir  = '/export/scratch1/zhong/PhD_Project/Projects/Kaggle/nuclei/data'
 
 traindata = data.TrainDf(data_dir)
 
 chromaticDS = data.NucleiDataset(traindata.df.query('chromatic==True').reset_index())
 
-dataloader = DataLoader(chromaticDS, batch_size=4,
-                        shuffle=True, num_workers=4)
-#%% show some images
+dataloader = DataLoader(chromaticDS, batch_size=1,
+                        shuffle=True, num_workers=8)
 
-# to numpy matrix : train_img_df.sample(1)['images'].as_matrix()[0]
-n_img = 4
-
-fig, ax = plt.subplots(2, n_img, figsize = (12, 4))
-
-for (_, c_row), (c_im, c_lab) in zip( traindata.df.query('chromatic==True').sample(n_img).iterrows(), ax.T):
-      c_im.imshow(c_row['images'])
-      c_im.axis('off')
-      c_im.set_title('Microscope')
-      
-#      c_lab.imshow(c_row['masks']+c_row['centroids'] +c_row['boundaries'])
-      c_lab.imshow(c_row['centroids'] )
-      c_lab.axis('off')
-      c_lab.set_title('Labeled')
-
-
-#%%
-      
-from skimage.morphology import closing, opening, disk
-def clean_img(x):
-    return opening(closing(x, disk(1)), disk(3))
- #%%
-cnnNet = cnnModule.ChromaticNet()
-print(cnnNet)
-#%% put the data into Variable
-
-
-_, train_rle_row = next(traindata.df.sample(1).iterrows())
-  
-train_row_rles = data.rle_fromImage(train_rle_row['masks'])
-
-tl_rles = traindata.labels.query('ImageId=="{ImageId}"'.format(**train_rle_row))['EncodedPixels']
-
-tl_rles = sorted(tl_rles, key = lambda x: int(x[0]))
-
-train_row_rles = sorted(train_row_rles, key = lambda x: x[0])
-
-for tl, tr in zip(tl_rles, train_row_rles):
-    print(tl[0], tr[0])
-match, mismatch = 0, 0
-for img_rle, train_rle in zip(sorted(train_row_rles, key = lambda x: x[0]), 
-                             sorted(tl_rles, key = lambda x: int(x[0]))):
-    for i_x, i_y in zip(img_rle, train_rle):
-        if i_x == int(i_y):
-            match += 1
-        else:
-            mismatch += 1
-print('Matches: %d, Mismatches: %d, Accuracy: %2.1f%%' % (match, mismatch, 100.0*match/(match+mismatch)))
 
 #%%  msdNet
   
@@ -96,7 +47,7 @@ from nuclei.kernel.lossFunc import crossEntropy2d_sum
 
 msdNet_chro = msdModule.msdNet(3, 2, 20, 3 )
 
-epoch =3
+epoch =30
 optimizer = optim.Adam(msdNet_chro.parameters(),   lr= 1e-3)
 optimizer.zero_grad()
 criterion = L1Loss()
@@ -170,3 +121,26 @@ for (_, c_row), (c_img, c_msk, c_out) in zip( traindata.df_chromatic.sample(ndsh
   c_msk.axis('off')
   c_msk.set_title('ground_truth')
   
+  
+  #%% put the data into Variable
+_, train_rle_row = next(traindata.df.sample(1).iterrows())
+  
+train_row_rles = data.rle_fromImage(train_rle_row['masks'])
+
+tl_rles = traindata.labels.query('ImageId=="{ImageId}"'.format(**train_rle_row))['EncodedPixels']
+
+tl_rles = sorted(tl_rles, key = lambda x: int(x[0]))
+
+train_row_rles = sorted(train_row_rles, key = lambda x: x[0])
+
+for tl, tr in zip(tl_rles, train_row_rles):
+    print(tl[0], tr[0])
+match, mismatch = 0, 0
+for img_rle, train_rle in zip(sorted(train_row_rles, key = lambda x: x[0]), 
+                             sorted(tl_rles, key = lambda x: int(x[0]))):
+    for i_x, i_y in zip(img_rle, train_rle):
+        if i_x == int(i_y):
+            match += 1
+        else:
+            mismatch += 1
+print('Matches: %d, Mismatches: %d, Accuracy: %2.1f%%' % (match, mismatch, 100.0*match/(match+mismatch)))
