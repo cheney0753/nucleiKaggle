@@ -21,11 +21,7 @@ class msdNet(nn.Module):
         super(msdNet, self).__init__()
         
         
-        # 3 input image channel, 8 output channels, 3*3 square convolution
-        # kernel
-        
         self.net = nn.Sequential(
-                #nn.BatchNorm2d(3).cuda(),
                 MSDModule(c_in, c_out, depth, width, msd_dilation, conv3d=False),
                 nn.Softmax2d().cuda())
 

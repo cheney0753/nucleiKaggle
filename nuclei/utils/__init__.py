@@ -15,3 +15,6 @@ __all__ += image.__all__
 
 from .data import *
 __all__ += data.__all__
+
+from .plot_data import *
+__all__ += plot_data.__all__
