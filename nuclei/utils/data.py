@@ -253,7 +253,12 @@ class TrainDf(object):
 class NucleiDataset(Dataset):
   """ chromatic images dataset. """
   
-  def __init__(self, df, transform = None):
+  def __init__(self, df, key = 'masks', transform = None):
+     '''
+     Args:
+         key: str or None. Can 'masks' or 'eroded_masks'
+     '''
+    self.key = key
     self.df = df
     self.transform = transform
     
@@ -263,13 +268,10 @@ class NucleiDataset(Dataset):
   def __getitem__(self, index):
     images = np.moveaxis(self.df.iloc[index]['images'].astype('float32'), -1, 0)
     
-    mask_ = self.df.iloc[index]['masks'].astype('float32') # np.moveaxis(,  -1, 0)
-#    masks_2ch = np.stack( (1 - mask_, mask_), axis=0)
-    
-    centroids = self.df.iloc[index]['centroids'].astype('float32')
-    centroids_2ch = np.stack( (1 - centroids, centroids), axis=0)
-
-    return (images, mask_)
+#    target = self.df.iloc[index][self.key].astype('float32') # np.moveaxis(,  -1, 0)
+#    target_2ch = np.stack( (1 - target, target), axis=0)
+    target_2ch = self.df.iloc[index][self.key].astype(np.int_)
+    return (images, target_2ch)
   
      
 class Rescale(object):

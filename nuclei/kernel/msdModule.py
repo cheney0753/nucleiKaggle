@@ -19,6 +19,7 @@ import os
 __all__ = ('msdSegModule', )
 
 
+from nuclei.kernel.lossFunc import crossEntropy2d_sum
 
 class msdSegModule(nn.Module):
     
@@ -95,8 +96,8 @@ class msdSegModule(nn.Module):
             
         self.output = self.net( self.input)
 #        print(self.target.data.shape)
-        self.loss = self.criterion(self.output,
-                                   self.target.squeeze(1))
+        self.loss = self.criterion(self.output,self.target.squeeze(1))
+#        self.loss = crossEntropy2d_sum(self.output, self.target)
         
     def learn(self, x = None, target = None):
         self.forward(x, target)
