@@ -66,23 +66,19 @@ sys.stdout = f
 
     
 print('Reading from data folder: ', data_dir)
+traindata = data.TrainDf(data_dir)
 
 try:
     assert os.path.exists(temp_dir)
 except AssertionError:
     os.mkdir(temp_dir)
 
-traindata = data.TrainDf(data_dir)
-
-chromaticDS = data.NucleiDataset(traindata.df.query('chromatic==True').reset_index())
-
-dataloader = DataLoader(chromaticDS, batch_size=1,
-                        shuffle=True, num_workers=8)
 
 
 stage = 'train'
-training_types = ('masks', 'centroids')
-image_types = ('chrom', 'monochrom')
+#training_types = ('masks', 'centroids')
+training_types = ('masks',)
+image_types = ('monochrom',)
 
 #%%  msdNet
 
@@ -90,33 +86,34 @@ ch_in= 3
 ch_out = 2
 depth =70 
 width = 2
-epoch = 200
+num_epoch = 200
 if isTest:
-    epoch = 10
+    num_epoch = 10
 epoch_n = 10
 #%%
 
 for trtype in training_types:
     for imtype in image_types:
                 
-        msdNet_Net = msdModule.msdNet(ch_in, ch_out, depth, width )
         
         if imtype == 'chrom':
-            pdSeries = traindata.df.query('chromatic==True')
+            pdSeries = traindata.df.query('chromatic==True').reset_index()
         elif imtype == 'monochrom':
-            pdSeries = traindata.df.query('chromatic == False')
+            pdSeries = traindata.df.query('chromatic == False').reset_index()
         else:
             raise Exception('The image type isn\'t right.')
             
         # epoch number
         
         
-        optimizer = optim.Adam(msdNet_Net.parameters())
-        optimizer.zero_grad()
-        
+        dataloader = DataLoader(data.NucleiDataset(pdSeries), batch_size=1,
+                                shuffle=True, num_workers=8)
+
+
         whatsgoingon =  imtype+'_'+stage+'_'+trtype
         
         dir_wgo = os.path.join( temp_dir, whatsgoingon)
+        
         
         try:
             assert os.path.exists( dir_wgo)
@@ -125,54 +122,22 @@ for trtype in training_types:
             
             
         # % record the loss, and the output for every 30 epochs
-        loss_var = []
-        for ipc in range(epoch):
-            r_loss = 0.0
-            
-            for ide, (image_, mask_2ch, centroids_2ch) in enumerate(dataloader):  
-                optimizer.zero_grad()
-              
-              #forward
-        #        mask_2ch = torch.cat( (1 - mask_, mask_), dim=-3)[None, ...]
-                
-                
-                output_ = msdNet_Net(Variable(image_).cuda())
-                
-                if trtype == 'masks':
-                    expect = mask_2ch
-                elif trtype == 'centroids':
-                    expect = centroids_2ch
-                else:
-                    raise Exception('The training type isn\'t right.')
-                loss = crossEntropy2d_sum(output_.contiguous(), Variable(expect).cuda())
+        
+        msdNet = msdModule.msdSegModule(ch_in, ch_out, depth, width)
 
-                loss.backward()
-                optimizer.step()
-              
-                r_loss += loss.data[0]
-                
-           # print('[%d, %d print('[%d, %d] loss: %.5f'%(ipc + 1, ide + 1, r_loss/(ide+1) ))]')
-            
-            
-            loss_var.append(r_loss/ide)
-            
-            if ipc%epoch_n == 0 :
-                print('[%d, %d] loss: %.5f. time: %s'%(ipc + 1, ide + 1, r_loss/(ide+1), datetime.datetime.now() )) 
-                fig = plot_data.plot_network_output(msdNet_Net, pdSeries)
-                
-                fig.savefig( os.path.join(dir_wgo, 'training_images_{}.png'.format(ipc)))
-            
+        loss_list = msdNet.train(dataloader, num_epochs= 10, savefigures = True, num_fig= 10, save_dir = dir_wgo  )
+        
             
          # save the loss variation plot
         
         fig, ax = plt.subplots(1)
-        ax.plot( loss_var)
+        ax.plot( loss_list)
         ax.set_ylabel('BCE loss')
         ax.set_xlabel('Epoch')
         fig.savefig( os.path.join(dir_wgo, 'loss.png'))
         
         #% save the trained network
-        torch.save(msdNet_Net.state_dict(), os.path.join( dir_wgo, 'msdNet.pth.tar'))
+        msdNet.save_network(dir_wgo, 'msdNet.pytorch')
         print('msdNet of ' + whatsgoingon +' has been saved.' )
 sys.stdout = orig_stdout
 f.close()
