@@ -14,12 +14,14 @@ isCUDA = True
 import argparse
 parser =  argparse.ArgumentParser()
 parser.add_argument("-t","--test", help="set the program in a test mode with few data and expochs.",  action="store_true")
+parser.add_argument("-e","--epoch",help="number of epochs for training", default = 150, type = int)
+
 args = parser.parse_args()
 isTest = args.test
 if args.test:
     print('In the test mode.')
 
-isTest = True    
+#isTest = True    
 #%%
 import numpy as np
 import torch
@@ -78,18 +80,21 @@ except AssertionError:
 stage = 'train'
 #training_types = ('masks', 'centroids')
 training_types = ('masks',)
-image_types = ('monochrom',)
+image_types = ('monochrom', 'chrom')
 
 #%%  msdNet
 
 ch_in= 3
 ch_out = 2
-depth =70 
+depth =40 
+if isTest:
+    depth = 10
+
 width = 2
-num_epoch = 200
+num_epoch = args.epoch
 if isTest:
     num_epoch = 10
-epoch_n = 10
+epoch_n = 20
 #%%
 
 for trtype in training_types:
@@ -125,8 +130,7 @@ for trtype in training_types:
         
         msdNet = msdModule.msdSegModule(ch_in, ch_out, depth, width)
 
-        loss_list = msdNet.train(dataloader, num_epochs= 10, savefigures = True, num_fig= 10, save_dir = dir_wgo  )
-        
+        loss_list = msdNet.train(dataloader, num_epochs= num_epoch, savefigures = True, num_fig= 10, save_dir = dir_wgo  )
             
          # save the loss variation plot
         
@@ -139,8 +143,18 @@ for trtype in training_types:
         #% save the trained network
         msdNet.save_network(dir_wgo, 'msdNet.pytorch')
         print('msdNet of ' + whatsgoingon +' has been saved.' )
+
 sys.stdout = orig_stdout
 f.close()
+#%% load the network and apply 
+msdNet_rl = msdModule.msdSegModule(ch_in, ch_out, depth, width)
+
+msdNet_rl.load_network(dir_wgo,'msdNet.pytorch' )
+msdNet_rl.validate(dataloader)
+msdNet_rl.save_output(os.path.join(dir_wgo, 'output_{}.png'.format( 'test')))
+msdNet_rl.save_input(os.path.join(dir_wgo, 'input_{}.png'.format( 'test')))
+msdNet_rl.save_target(os.path.join(dir_wgo, 'target_{}.png'.format( 'test')))
+
 #%%        # example of reusing
 #        ch_in= 3
 #        ch_out = 2
@@ -151,9 +165,9 @@ f.close()
 #msdNet_chro_centroids_reload.load_state_dict( torch.load(  os.path.join( dir_wgo, 'msdNet.pth.tar')))
 #
 
-dir_wgo = '/export/scratch1/zhong/PhD_Project/Projects/Kaggle/nuclei/temp/201841/chrom_train_masks'
-msdNet_chro_centroids_reload = msdModule.msdNet(ch_in, ch_out, depth, width)
-msdNet_chro_centroids_reload.load_state_dict( torch.load(  os.path.join( dir_wgo, 'msdNet.pth.tar')))
+#dir_wgo = '/export/scratch1/zhong/PhD_Project/Projects/Kaggle/nuclei/temp/201841/chrom_train_masks'
+#msdNet_chro_centroids_reload = msdModule.msdNet(ch_in, ch_out, depth, width)
+#msdNet_chro_centroids_reload.load_state_dict( torch.load(  os.path.join( dir_wgo, 'msdNet.pth.tar')))
 
 
 #%%

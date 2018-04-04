@@ -12,13 +12,37 @@ import torch.nn as nn
 import torch.optim as optim
 import torch as t
 import torchvision.utils as tvu
+from nuclei.kernel.lossFunc import crossEntropy2d_sum
 
+import datetime
 import numpy as np
 from msd_pytorch.msd_module import (MSDModule, msd_dilation)
 import os
 __all__ = ('msdSegModule', )
 
+from scipy import misc
 
+def _image_save(filename, imarr, image_type ='input'):
+    #print('Image size: {}'.format(imarr.shape))
+    
+    try:
+        assert len(imarr.shape) == 3 or len(imarr.shape) ==2
+    except:
+        print('Can\'t save {}.'.format(image_type), ' Image size: {}'.format(imarr.shape))
+        return None
+        
+    if len(imarr.shape) == 3:
+        imarr = np.moveaxis(imarr, 0, 2)
+        assert imarr.shape[2] == 2 or imarr.shape[2] == 3
+    if imarr.dtype == np.float_:
+        imarr -= imarr.min()
+        imarr /= imarr.max()
+    if len(imarr.shape) == 2:
+        misc.imsave(filename, imarr)
+    elif imarr.shape[2] == 3:
+        misc.imsave(filename, imarr)
+    elif imarr.shape[2] == 2:
+        misc.imsave(filename, np.concatenate((imarr[:,:,0].squeeze(), imarr[:,:,1].squeeze())))
 
 class msdSegModule(nn.Module):
     
@@ -46,7 +70,8 @@ class msdSegModule(nn.Module):
         # during training.
         self.net_msd = MSDModule(c_in, c_out, depth, width, msd_dilation, reflect=reflect, conv3d=conv3d)
         
-        net_trained = nn.Sequential(self.net_msd, nn.Conv2d( c_out, c_out, 1), nn.LogSoftmax(dim = 1))
+        #net_trained = nn.Sequential(self.net_msd, nn.Conv2d( c_out, c_out, 1), nn.LogSoftmax(dim = 1))
+        net_trained = nn.Sequential(self.net_msd, nn.Conv2d( c_out, c_out, 1), nn.Softmax())
         
         
         self.net = nn.Sequential(net_fixed,
@@ -80,7 +105,7 @@ class msdSegModule(nn.Module):
     
     def set_target(self, data):
         # The class labels must be of long data type
-        data = data.long()
+        #data = data.long()
         # The class labels must reside on the GPU
         data = data.cuda()
         self.target = Variable(data)   
@@ -95,8 +120,9 @@ class msdSegModule(nn.Module):
             
         self.output = self.net( self.input)
 #        print(self.target.data.shape)
-        self.loss = self.criterion(self.output,
-                                   self.target.squeeze(1))
+        #self.loss = self.criterion(self.output,
+        #                           self.target.squeeze(1))
+        self.loss = crossEntropy2d_sum(self.output, self.target)
         
     def learn(self, x = None, target = None):
         self.forward(x, target)
@@ -117,12 +143,12 @@ class msdSegModule(nn.Module):
                 
             loss_list.append( training_loss/len(dataloader))
         
-            print(  training_loss/len(dataloader))
+            print('Loss: ',  training_loss/len(dataloader), 'Time: {}'.format( str(datetime.datetime.now())))
             if savefigures and epoch %( num_epochs// num_fig) == 0:
                 self.save_output(os.path.join(save_dir, 'output_{}.png'.format( epoch)))
                 self.save_input(os.path.join(save_dir, 'input_{}.png'.format( epoch)))
                 self.save_target(os.path.join(save_dir, 'target_{}.png'.format( epoch)))
-                self.save_diff(os.path.join(save_dir, 'diff_{}.png'.format( epoch)))
+                #self.save_diff(os.path.join(save_dir, 'diff_{}.png'.format( epoch)))
            
         return loss_list
             
@@ -153,7 +179,7 @@ class msdSegModule(nn.Module):
         save_path = self.get_network_path(save_dir, fname)
         os.makedirs(save_dir, exist_ok=True)
         # Clear the L and G buffers before saving:
-        self.msd.clear_buffers()
+        self.net_msd.clear_buffers()
 
         t.save(self.net.state_dict(), save_path)
         return save_path
@@ -175,16 +201,24 @@ class msdSegModule(nn.Module):
         self.net.cuda()
 
     def save_output(self, filename):
-        tvu.save_image(self.output.data.squeeze(), filename)
-
+        #tvu.save_image(self.output.data.squeeze(), filename)
+        imarr = self.output.data.squeeze().cpu().numpy()        
+        _image_save(filename, imarr, 'output')
+        
     def save_input(self, filename):
-        tvu.save_image(self.input.data.squeeze(), filename)
-
+        #tvu.save_image(self.input.data.squeeze(), filename)
+        imarr = self.input.data.squeeze().cpu().numpy()        
+        _image_save(filename, imarr, 'input')
+         
     def save_target(self, filename):
-        tvu.save_image(self.target.data.squeeze(), filename)
-
+        #tvu.save_image(self.target.data.squeeze(), filename)
+        imarr = self.target.data.squeeze().cpu().numpy()
+        _image_save(filename, imarr, 'target')
+        
     def save_diff(self, filename):
-        tvu.save_image(t.abs(self.target - self.output).data.squeeze(), filename)
+        #tvu.save_image(t.abs(self.target - self.output).data.squeeze(), filename)
+        imarr = t.abs(self.target - self.output).data.squeeze().cpu().numpy()
+        _image_save(filename, imarr, 'diff')
 
     def save_heatmap(self, filename):
         ''' Make a heatmap of the absolute sum of the convolution kernels
