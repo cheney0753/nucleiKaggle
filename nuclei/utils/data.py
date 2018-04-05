@@ -116,7 +116,7 @@ def rle_fromImage(x, centroids, cut_off = 0.5):
     
 class TrainDf(object):
     
-    def __init__( self, data_dir, target_type = 'merged_masks'):
+    def __init__( self, data_dir, target_key):
         """
         read the data from folder
         ------------
@@ -141,7 +141,6 @@ class TrainDf(object):
         
         print('Reading ' + '{}_train_labels.csv'.format(stage_label))
         
-#        print(train_labels.sample()['EncodedPixels'])
         
         #% load the training files 
         allimagepath = glob.glob(os.path.join( data_dir, '{}_*'.format(stage_label),
@@ -178,8 +177,8 @@ class TrainDf(object):
           c_row = {col_name: col_v for col_name, col_v, in zip(group_cols, n_group)}
           
           # get a list of the path for masks
-          c_row['merged_masks'] = n_rows.query('ImageType=="merged_masks"')['path'].values.tolist()
           c_row['images'] = n_rows.query('ImageType=="images"')['path'].values.tolist()
+          c_row['merged_masks'] = n_rows.query('ImageType=="merged_masks"')['path'].values.tolist()
           c_row['eroded_masks'] = n_rows.query('ImageType=="eroded_masks"')['path'].values.tolist()
           # a list containing the dictionary of {'ImageId', 'Stage', 'masks', 'images', 'eroded_masks', 'merged_masks'}
           # and the paths
@@ -189,15 +188,10 @@ class TrainDf(object):
 
         
         train_img_df['images'] = self._read_images(train_img_df['images'])
-        # train_img_df['boundaries'] = self._get_boundaries(train_img_df['masks'])
-        # train_img_df['centroids'] = self._get_centroids(train_img_df['masks'])
         
-        
-        print( 'Reading {}...'.format( target_type))
-        train_img_df[target_type] = self._read_bw_images(train_img_df[target_type])    
-        
-        #train_img_df['masks'] = self._get_masks(train_img_df['masks'])    
-        
+        print( 'Reading {}...'.format( target_key))
+        train_img_df[target_key] = self._read_bw_images(train_img_df[target_key])    
+
         print('Done.')
         print('Reading time: ', time.time() - clock)
         
@@ -262,15 +256,19 @@ class NucleiDataset(Dataset):
     return len(self.df)
   
   def __getitem__(self, index):
-    images = np.moveaxis(self.df.iloc[index]['images'].astype('float32'), -1, 0)
+    images = self.df.iloc[index]['images'].astype('float32')
     target = self.df.iloc[index][self.key].astype('float32') # np.moveaxis(,  -1, 0)
-    target_2ch = np.stack( (1 - target, target), axis=0)
-#    target_2ch = self.df.iloc[index][self.key].astype(np.int_)
-    return (images, target_2ch)
+    target_2ch = np.stack( (1 - target, target), axis=2)
+    
+    sample = {'images': images, self.key: target_2ch}
+    if self.transform:
+            sample = self.transform(sample)
+
+    return sample
   
      
 class Rescale(object):
-    """ Rescale the image in a sample
+    """ Rescale the images in a sample
     -----
     Par :
         output_size (tuple or int): Desired output size. If tuple, output is
@@ -283,7 +281,7 @@ class Rescale(object):
         self.key = key
         
     def __call__(self, sample):
-        image, mask = sample['images'], sample[self.key]
+        image, target = sample['images'], sample[self.key]
         
         h, w = image.shape[:2]
         if isinstance(self.output_size, int):
@@ -296,10 +294,10 @@ class Rescale(object):
             
         new_h, new_w = int(new_h), int(new_w)
         
-        new_image = transform.resize(image, (new_h, new_w))
-        new_mask = transform.resize(mask, (new_h, new_w))
+        new_image = transform.resize(image, (new_h, new_w, 3))
+        new_target = transform.resize(target, (new_h, new_w, target.shape[-1]))
         
-        return {'images': new_image, 'masks': new_mask}
+        return {'images': new_image, self.key: new_target}
     
 class RandomCrop(object):
     """Crop randomly the image in a sample.
@@ -309,55 +307,71 @@ class RandomCrop(object):
             is made.
     """
 
-    def __init__(self, output_size, key):
-        assert isinstance(output_size, (int, tuple))
+    def __init__(self,  key , output_size = None):
+        
+        if output_size is not None:
+            assert isinstance(output_size, (int, tuple))
+            
         if isinstance(output_size, int):
             self.output_size = (output_size, output_size)
-        else:
+        elif isinstance(output_size, tuple):
             assert len(output_size) == 2
             self.output_size = output_size
+            
+        self.key = key
 
     def __call__(self, sample):
         
-        image, mask = sample['images'], sample['masks']
-
+        image, target = sample['images'], sample[self.key]
+        
         h, w = image.shape[:2]
-        new_h, new_w = self.output_size
+        
+        if self.output_size is None:
+            new_h, new_w = image.shape[0]//2, image.shape[1]//2
+        else:
+            new_h, new_w = self.output_size
 
         top = np.random.randint(0, h - new_h)
         left = np.random.randint(0, w - new_w)
 
         image = image[top: top + new_h,
-                      left: left + new_w]
+                      left: left + new_w,
+                      :]
 
-        mask = mask[top: top + new_h,
-                      left: left + new_w]
-        return {'images': image, 'masks': mask}
+        target = target[top: top + new_h,
+                      left: left + new_w,
+                      :]
+        
+        return {'images': image, self.key: target}
 
 class GaussianNoise(object):
     """ Add random Gaussian noise to the images
     
     """
-    def __int__(self, eps = 0.001):
+    def __int__(self, key, eps = 0.001):
         self.eps = eps
-    
+        self.key = key
+        
     def __call__(self, sample):
         image =  sample['images']
         
-        return {'images': image }
+        return {'images': image, self.key:  sample[self.key]}
         
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
-
+    def __init__(self,  key):
+        self.key = key
+        
     def __call__(self, sample):
-        image, mask = sample['images'], sample['masks']
+        image, target = sample['images'], sample[self.key]
 
         # swap color axis because
         # numpy image: H x W x C
         # torch image: C X H X W
-        image = image.transpose((2, 0, 1))
+        image = np.moveaxis(image, -1, 0)
+        target = np.moveaxis(target, -1, 0)
         return {'images': torch.from_numpy(image),
-                'masks': torch.from_numpy(mask)}
+                self.key: torch.from_numpy(target)}
 
         
 class TestData(unittest.TestCase):

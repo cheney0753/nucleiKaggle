@@ -32,16 +32,17 @@ from scipy import ndimage
 from matplotlib import pyplot as plt
 import os, sys
 import datetime
+import pandas as pd
 now = datetime.datetime.now()
 #%matplotlib agg
 plt.ioff()
 #%%
 from nuclei.kernel import cnnModule
 from nuclei.kernel.lossFunc import diceLoss, IoU_mean
-from torch.autograd import Variable
-import torch.optim as optim
 from skimage import measure
 from sklearn import cluster
+
+from torchvision import transforms
 #%%
 
 from nuclei.kernel import msdModule
@@ -54,10 +55,13 @@ from nuclei.utils import plot_data
 #%% prepare the data 
 cwdir = os.path.abspath(os.path.dirname(__file__))
 data_dir  = os.path.join( cwdir, os.pardir, 'data')
+
 if isTest:
     data_dir = os.path.join(cwdir, os.pardir, 'data_sample')
+    
+data_dir = os.path.abspath( data_dir)
 
-temp_dir = os.path.join( cwdir, os.pardir, 'temp', '%d%d%d'%(now.year, now.month, now.day))
+temp_dir = os.path.abspath( os.path.join( cwdir, os.pardir, 'temp', '%02d%02d'%(now.month, now.day)))
 
 try:
     assert os.path.exists(temp_dir)
@@ -66,15 +70,11 @@ except AssertionError:
     
 orig_stdout = sys.stdout
 
-f_stdout = os.path.join(temp_dir, 'stdout.txt')
+f_stdout = os.path.abspath(os.path.join(temp_dir, 'stdout.txt'))
 f=open( f_stdout, 'w')
 
 print('Print to: ',f_stdout)
 sys.stdout = f
-
-    
-print('Reading from data folder: ', data_dir)
-traindata = data.TrainDf(data_dir)
 
 stage = 'train'
 training_types = ('merged_masks','eroded_masks')
@@ -84,18 +84,20 @@ image_types = ('monochrom', 'chrom')
 
 ch_in= 3
 ch_out = 2
-depth =50 
-if isTest:
-    depth = 10
-
-width = 2
+depth =args.depth 
+width = args.width
 num_epoch = args.epoch
-if isTest:
-    num_epoch = 10
 epoch_n = 20
+
 #%%
 
-for trtype in training_types:
+
+for target_key in training_types:
+    
+        
+    print('Reading from data folder: ', data_dir)
+    traindata = data.TrainDf(data_dir, target_key= target_key )
+
     for imtype in image_types:
                 
         
@@ -107,29 +109,30 @@ for trtype in training_types:
             raise Exception('The image type isn\'t right.')
             
         # epoch number
-        
-        
-        dataloader = DataLoader(data.NucleiDataset(pdSeries), batch_size=1,
+        tsfm = transforms.Compose( ( data.RandomCrop(target_key, 255), data.ToTensor(target_key) ))
+#        tf = data.ToTensor(target_key)
+        ds = data.NucleiDataset(pdSeries, key = target_key, transform= tsfm)
+        dataloader = DataLoader( ds , batch_size=1,
                                 shuffle=True, num_workers=8)
 
 
-        whatsgoingon =  imtype+'_'+stage+'_'+trtype
+        whatsgoingon =  imtype+'_'+stage+'_'+target_key
         
-        dir_wgo = os.path.join( temp_dir, whatsgoingon)
-        
+        dir_wgo = os.path.abspath( os.path.join( temp_dir, whatsgoingon))
         
         try:
             assert os.path.exists( dir_wgo)
         except AssertionError:
-            os.mkdir( dir_wgo)
-            
+            os.mkdir( dir_wgo)            
             
         # % record the loss, and the output for every 30 epochs
         
         msdNet = msdModule.msdSegModule(ch_in, ch_out, depth, width)
 
-        loss_list = msdNet.train(dataloader, num_epochs= num_epoch, savefigures = True, num_fig= 10, save_dir = dir_wgo  )
-            
+        loss_list = msdNet.train(dataloader, num_epochs= num_epoch, target_key= target_key, savefigures = True, num_fig= 10, save_dir = dir_wgo  )
+          
+        loss_pd = pd.DataFrame( data = {'Iteration': list(range(len(loss_list))), 'Loss': loss_list})
+        loss_pd.to_csv( os.path.join( dir_wgo, 'loss.csv'))
          # save the loss variation plot
         fig, ax = plt.subplots(1)
         ax.plot( loss_list)
@@ -147,7 +150,7 @@ f.close()
 msdNet_rl = msdModule.msdSegModule(ch_in, ch_out, depth, width)
 
 msdNet_rl.load_network(dir_wgo,'msdNet.pytorch' )
-msdNet_rl.validate(dataloader)
+msdNet_rl.validate(dataloader, target_key)
 msdNet_rl.save_output(os.path.join(dir_wgo, 'output_{}.png'.format( 'test')))
 msdNet_rl.save_input(os.path.join(dir_wgo, 'input_{}.png'.format( 'test')))
 msdNet_rl.save_target(os.path.join(dir_wgo, 'target_{}.png'.format( 'test')))

@@ -74,7 +74,7 @@ class msdSegModule(nn.Module):
         self.net_msd = MSDModule(c_in, c_out, depth, width, msd_dilation, reflect=reflect, conv3d=conv3d)
         
         #net_trained = nn.Sequential(self.net_msd, nn.Conv2d( c_out, c_out, 1), nn.LogSoftmax(dim = 1))
-        net_trained = nn.Sequential(self.net_msd, nn.Conv2d( c_out, c_out, 1), nn.Softmax())
+        net_trained = nn.Sequential(self.net_msd, nn.Conv2d( c_out, c_out, 1), nn.Softmax(dim = 1))
         
         
         self.net = nn.Sequential(net_fixed,
@@ -132,15 +132,16 @@ class msdSegModule(nn.Module):
         self.loss.backward()
         self.optimizer.step()
         
-    def train(self, dataloader, num_epochs, savefigures = False, num_fig = 10, save_dir = '.' ):
+    def train(self, dataloader, num_epochs, target_key = 'merged_masks', savefigures = False, num_fig = 10, save_dir = '.' ):
         loss_list = []
         
         if savefigures:
             print('The figures during training are saved in: {}'.format( save_dir))
         for epoch in range(num_epochs):
             training_loss = 0
-            for(x, target) in dataloader:
-                self.learn(x, target)
+            for sample in dataloader:
+                self.learn(sample['images'], sample[target_key])
+                
                 training_loss += self.get_loss()
                 
             loss_list.append( training_loss/len(dataloader))
@@ -155,10 +156,11 @@ class msdSegModule(nn.Module):
         return loss_list
             
             
-    def validate(self, dataloader):
+    def validate(self, dataloader, target_key = 'merged_masks'):
         validation_loss = 0 
-        for (x, target) in dataloader:
-            self.forward(x, target)
+        for sample in dataloader:
+            self.learn(sample['images'], sample[target_key])
+            
             validation_loss += self.get_loss()
             
         return validation_loss/len(dataloader)
