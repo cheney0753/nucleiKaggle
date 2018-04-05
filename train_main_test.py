@@ -15,6 +15,8 @@ import argparse
 parser =  argparse.ArgumentParser()
 parser.add_argument("-t","--test", help="set the program in a test mode with few data and expochs.",  action="store_true")
 parser.add_argument("-e","--epoch",help="number of epochs for training", default = 150, type = int)
+parser.add_argument("-d","--depth",help="number of depth for the MSD-net", default = 30, type = int)
+parser.add_argument("-w","--width",help="number of width for the MSD-net", default = 2, type = int)
 
 args = parser.parse_args()
 isTest = args.test
@@ -48,8 +50,6 @@ from nuclei.kernel.lossFunc import crossEntropy2d_sum
 from nuclei.utils import data
 from nuclei.utils import plot_data
 
-#%% 
-
 
 #%% prepare the data 
 cwdir = os.path.abspath(os.path.dirname(__file__))
@@ -58,6 +58,12 @@ if isTest:
     data_dir = os.path.join(cwdir, os.pardir, 'data_sample')
 
 temp_dir = os.path.join( cwdir, os.pardir, 'temp', '%d%d%d'%(now.year, now.month, now.day))
+
+try:
+    assert os.path.exists(temp_dir)
+except AssertionError:
+    os.mkdir(temp_dir)
+    
 orig_stdout = sys.stdout
 
 f_stdout = os.path.join(temp_dir, 'stdout.txt')
@@ -70,23 +76,15 @@ sys.stdout = f
 print('Reading from data folder: ', data_dir)
 traindata = data.TrainDf(data_dir)
 
-try:
-    assert os.path.exists(temp_dir)
-except AssertionError:
-    os.mkdir(temp_dir)
-
-
-
 stage = 'train'
-#training_types = ('masks', 'centroids')
-training_types = ('masks',)
+training_types = ('merged_masks','eroded_masks')
 image_types = ('monochrom', 'chrom')
 
 #%%  msdNet
 
 ch_in= 3
 ch_out = 2
-depth =40 
+depth =50 
 if isTest:
     depth = 10
 
@@ -133,7 +131,6 @@ for trtype in training_types:
         loss_list = msdNet.train(dataloader, num_epochs= num_epoch, savefigures = True, num_fig= 10, save_dir = dir_wgo  )
             
          # save the loss variation plot
-        
         fig, ax = plt.subplots(1)
         ax.plot( loss_list)
         ax.set_ylabel('BCE loss')
@@ -154,44 +151,3 @@ msdNet_rl.validate(dataloader)
 msdNet_rl.save_output(os.path.join(dir_wgo, 'output_{}.png'.format( 'test')))
 msdNet_rl.save_input(os.path.join(dir_wgo, 'input_{}.png'.format( 'test')))
 msdNet_rl.save_target(os.path.join(dir_wgo, 'target_{}.png'.format( 'test')))
-
-#%%        # example of reusing
-#        ch_in= 3
-#        ch_out = 2
-#        depth = 50
-#        width = 2
-##        
-#msdNet_chro_centroids_reload = msdModule.msdNet(ch_in, ch_out, depth, width)
-#msdNet_chro_centroids_reload.load_state_dict( torch.load(  os.path.join( dir_wgo, 'msdNet.pth.tar')))
-#
-
-#dir_wgo = '/export/scratch1/zhong/PhD_Project/Projects/Kaggle/nuclei/temp/201841/chrom_train_masks'
-#msdNet_chro_centroids_reload = msdModule.msdNet(ch_in, ch_out, depth, width)
-#msdNet_chro_centroids_reload.load_state_dict( torch.load(  os.path.join( dir_wgo, 'msdNet.pth.tar')))
-
-
-#%%
-
-
-##%% put the data into Variable
-#_, train_rle_row = next(traindata.df.sample(1).iterrows())
-#  
-#train_row_rles = data.rle_fromImage(train_rle_row['masks'])
-#
-#tl_rles = traindata.labels.query('ImageId=="{ImageId}"'.format(**train_rle_row))['EncodedPixels']
-#
-#tl_rles = sorted(tl_rles, key = lambda x: int(x[0]))
-#
-#train_row_rles = sorted(train_row_rles, key = lambda x: x[0])
-#
-#for tl, tr in zip(tl_rles, train_row_rles):
-#    print(tl[0], tr[0])
-#match, mismatch = 0, 0
-#for img_rle, train_rle in zip(sorted(train_row_rles, key = lambda x: x[0]), 
-#                             sorted(tl_rles, key = lambda x: int(x[0]))):
-#    for i_x, i_y in zip(img_rle, train_rle):
-#        if i_x == int(i_y):
-#            match += 1
-#        else:
-#            mismatch += 1
-#print('Matches: %d, Mismatches: %d, Accuracy: %2.1f%%' % (match, mismatch, 100.0*match/(match+mismatch)))

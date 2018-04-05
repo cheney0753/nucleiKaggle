@@ -21,6 +21,7 @@ import os
 __all__ = ('msdSegModule', )
 
 from scipy import misc
+from nuclei.kernel.lossFunc import crossEntropy2d_sum
 
 def _image_save(filename, imarr, image_type ='input'):
     #print('Image size: {}'.format(imarr.shape))
@@ -43,6 +44,8 @@ def _image_save(filename, imarr, image_type ='input'):
         misc.imsave(filename, imarr)
     elif imarr.shape[2] == 2:
         misc.imsave(filename, np.concatenate((imarr[:,:,0].squeeze(), imarr[:,:,1].squeeze())))
+
+
 
 class msdSegModule(nn.Module):
     
@@ -120,9 +123,8 @@ class msdSegModule(nn.Module):
             
         self.output = self.net( self.input)
 #        print(self.target.data.shape)
-        #self.loss = self.criterion(self.output,
-        #                           self.target.squeeze(1))
         self.loss = crossEntropy2d_sum(self.output, self.target)
+#        self.loss = self.criterion(self.output,self.target.squeeze(1))
         
     def learn(self, x = None, target = None):
         self.forward(x, target)
@@ -246,3 +248,4 @@ class msdSegModule(nn.Module):
         tvu.save_image(self.net.G[:, 1:, :, :].transpose(0, 1),
                        filename,
                        nrow=10)
+  

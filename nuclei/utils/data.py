@@ -62,8 +62,20 @@ def _read_and_get_centroid_image( mask_img):
 def _stack_centroid_images( in_img_list):
     return np.sum(np.stack( [ _read_and_get_centroid_image(im) for im in in_img_list]), 0 ) 
 
-
-
+def _read_and_erode( mask_img):
+    msk = io.imread(mask_img) /255.0
+    
+    assert msk.max() == 1
+    
+    n_erode = 0
+    while n_erode < 2 and msk.sum() > 25:
+          msk = morphology.erode(msk)
+    
+    return msk
+    
+def _stack_eroded_masks( in_img_list):
+    return np.sum(np.stack([ _read_and_erode(im) for im in in_img_list]), 0)
+    
 def rle_encoding( image):
     """ Encode a binary image to rle"""
     
@@ -104,13 +116,14 @@ def rle_fromImage(x, centroids, cut_off = 0.5):
     
 class TrainDf(object):
     
-    def __init__( self, data_dir):
+    def __init__( self, data_dir, target_type = 'merged_masks'):
         """
         read the data from folder
         ------------
         Par : 
             data_dir: data directory
-            
+            target_type: str
+                'merged_masks' or 'eroded_masks'
         Return:
             pandas.DataFrame: {stage: }
         """
@@ -165,43 +178,25 @@ class TrainDf(object):
           c_row = {col_name: col_v for col_name, col_v, in zip(group_cols, n_group)}
           
           # get a list of the path for masks
-          c_row['masks'] = n_rows.query('ImageType=="masks"')['path'].values.tolist()
+          c_row['merged_masks'] = n_rows.query('ImageType=="merged_masks"')['path'].values.tolist()
           c_row['images'] = n_rows.query('ImageType=="images"')['path'].values.tolist()
-          
-          # a list containing the dictionary of {'ImageId', 'Stage', 'masks', 'images'}
+          c_row['eroded_masks'] = n_rows.query('ImageType=="eroded_masks"')['path'].values.tolist()
+          # a list containing the dictionary of {'ImageId', 'Stage', 'masks', 'images', 'eroded_masks', 'merged_masks'}
           # and the paths
           train_rows += [c_row]
           
         train_img_df = pd.DataFrame(train_rows)
-        
-#        
-#        pool = Pool(processes = 4)
-#        ## oops!! data to large to synchronize
-#        
-#        # using multi-processing to process them
-#
-##        print ('Reading images.')
-#        # read the images and crop from RGBA channels to RGB images
-#        result1 = pool.apply_async(self._read_images, ( train_img_df['images'],))
-##        print('Getting boundary images...')
-#        result2 = pool.apply_async(self._get_boundaries, ( train_img_df['masks'],))    
-##        print( 'Getting dilated centroids...')
-#        result3 = pool.apply_async(self._get_centroids, ( train_img_df['masks'],))
-#        
-#        train_img_df['images'] = result1.get(timeout=99999)
-#        train_img_df['boundaries'] = result2.get(timeout = 99999)
-#        train_img_df['centroids'] = result3.get(timeout = 99999)
-#
-#        pool.close()
-#        pool.join()
-#        
+
         
         train_img_df['images'] = self._read_images(train_img_df['images'])
-        train_img_df['boundaries'] = self._get_boundaries(train_img_df['masks'])
-        train_img_df['centroids'] = self._get_centroids(train_img_df['masks'])
+        # train_img_df['boundaries'] = self._get_boundaries(train_img_df['masks'])
+        # train_img_df['centroids'] = self._get_centroids(train_img_df['masks'])
         
-        print( 'Getting overlapped masks...')
-        train_img_df['masks'] = self._get_masks(train_img_df['masks'])    
+        
+        print( 'Reading {}...'.format( target_type))
+        train_img_df[target_type] = self._read_bw_images(train_img_df[target_type])    
+        
+        #train_img_df['masks'] = self._get_masks(train_img_df['masks'])    
         
         print('Done.')
         print('Reading time: ', time.time() - clock)
@@ -215,10 +210,13 @@ class TrainDf(object):
         print('Run process (%s)... for reading images' % ( os.getpid()))
         return dSeries.map(_read_and_stack).map( lambda x: x[:,:,:IMG_CHANNELS])
 
+    def _read_bw_images(self, dSeries):
+        print('Run process (%s)... for reading b\& w images' % ( os.getpid()))
+        return dSeries.map(_read_and_stack).map( lambda x: x.astype(float))
+
     def _get_boundaries(self, dSeries):
         print('Run process (%s)... for geting boundaries' % ( os.getpid()))
         return dSeries.map( _stack_boundary).map( lambda x: morphology.dilation( x.astype(float)) )
-
 
     
     def _get_centroids(self, dSeries):
@@ -229,7 +227,10 @@ class TrainDf(object):
         print('Run process (%s)... for reading masks' % ( os.getpid()))
         return dSeries.map(_read_and_stack).map(lambda x: x.astype(float))
 
-
+    def _get_eroded_masks(self, dSeries):
+        print('Run process (%s)... for reading and eroding masks' % ( os.getpid()))
+        return dSeries.map(_stack_eroded_masks).map(lambda x: x.astype(float))
+        
     def count(self):
         """
         Print the data informations
@@ -240,12 +241,7 @@ class TrainDf(object):
         print('Monochromatic images: ')
         self.df_monochrom['images'].map( lambda x: x.shape).value_counts()
         
-        
-        
-        
-        
-        
-        
+  
         
         
         
@@ -253,7 +249,12 @@ class TrainDf(object):
 class NucleiDataset(Dataset):
   """ chromatic images dataset. """
   
-  def __init__(self, df, transform = None):
+  def __init__(self, df, key = 'merged_masks', transform = None):
+    '''
+     Args:
+         key: str or None. Can 'merged_masks' or 'eroded_masks'
+    '''
+    self.key = key
     self.df = df
     self.transform = transform
     
@@ -262,16 +263,10 @@ class NucleiDataset(Dataset):
   
   def __getitem__(self, index):
     images = np.moveaxis(self.df.iloc[index]['images'].astype('float32'), -1, 0)
-    
-    mask_ = self.df.iloc[index]['masks'].astype('float32') # np.moveaxis(,  -1, 0)
-    #mask_ = self.df.iloc[index]['masks'].astype(np.int_) # np.moveaxis(,  -1, 0)
-
-    masks_2ch = np.stack( (1 - mask_, mask_), axis=0)
-    
-    centroids = self.df.iloc[index]['centroids'].astype('float32')
-    centroids_2ch = np.stack( (1 - centroids, centroids), axis=0)
-
-    return (images, masks_2ch)
+    target = self.df.iloc[index][self.key].astype('float32') # np.moveaxis(,  -1, 0)
+    target_2ch = np.stack( (1 - target, target), axis=0)
+#    target_2ch = self.df.iloc[index][self.key].astype(np.int_)
+    return (images, target_2ch)
   
      
 class Rescale(object):
@@ -282,12 +277,13 @@ class Rescale(object):
             matched to output_size. If int, smaller of image edges is matched
             to output_size keeping aspect ratio the same.
     """
-    def __init__(self, output_size):
+    def __init__(self, output_size, key):
         assert isinstance(output_size, (int, tuple))
         self.output_size = output_size
+        self.key = key
         
     def __call__(self, sample):
-        image, mask = sample['images'], sample['masks']
+        image, mask = sample['images'], sample[self.key]
         
         h, w = image.shape[:2]
         if isinstance(self.output_size, int):
@@ -313,7 +309,7 @@ class RandomCrop(object):
             is made.
     """
 
-    def __init__(self, output_size):
+    def __init__(self, output_size, key):
         assert isinstance(output_size, (int, tuple))
         if isinstance(output_size, int):
             self.output_size = (output_size, output_size)
@@ -322,6 +318,7 @@ class RandomCrop(object):
             self.output_size = output_size
 
     def __call__(self, sample):
+        
         image, mask = sample['images'], sample['masks']
 
         h, w = image.shape[:2]
@@ -347,6 +344,7 @@ class GaussianNoise(object):
     def __call__(self, sample):
         image =  sample['images']
         
+        return {'images': image }
         
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
