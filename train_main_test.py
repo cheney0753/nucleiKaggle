@@ -109,8 +109,8 @@ for target_key in training_types:
             raise Exception('The image type isn\'t right.')
             
         # epoch number
-        tsfm = transforms.Compose( ( data.RandomCrop(target_key, 255), data.ToTensor(target_key) ))
-#        tf = data.ToTensor(target_key)
+#        tsfm = transforms.Compose( ( data.RandomCrop(target_key, 255), data.ToTensor(target_key) ))
+        tsfm = data.ToTensor(target_key)
         ds = data.NucleiDataset(pdSeries, key = target_key, transform= tsfm)
         dataloader = DataLoader( ds , batch_size=1,
                                 shuffle=True, num_workers=8)
