@@ -7,7 +7,7 @@ Created on Fri Mar  2 14:49:10 2018
 
 To exam the nuclei data @ kaggle.com
 """
-%matplotlib qt
+#%matplotlib qt
 isCUDA = True
 #%% Import modules
 import numpy as np
@@ -17,14 +17,14 @@ from scipy import ndimage
 from matplotlib import pyplot as plt
 import os, sys
 #%%
-cwd = %pwd
+#cwd = %pwd
 sys.path.append(os.path.abspath(os.path.join( os.pardir, cwd)))
-from nuclei.kernel import cnnModule
-from nuclei.kernel.lossFunc import diceLoss, IoU_mean
+
+#%%
 from torch.autograd import Variable
 import torch.optim as optim
 from skimage import measure
-from sklearn import cluster
+#from sklearn import cluster
 
 from scipy import ndimage as ndi
 from skimage.feature import peak_local_max
@@ -33,9 +33,10 @@ from skimage.morphology import watershed
 from torch.nn import MSELoss, L1Loss
 from nuclei.utils import data
 
-data_dir  = '/export/scratch1/zhong/PhD_Project/Projects/Kaggle/nuclei/data_sample'
 
-traindata = data.TrainDf(data_dir)
+data_dir  = os.path.abspath( os.path.join( os.path.dirname( __file__), os.pardir, 'data_sample'))
+
+merge_masks_data = data.TrainDf(data_dir, target_key = 'merge_masks')
 
 
 chromaticDS = data.NucleiDataset(traindata.df.query('chromatic==True').reset_index())
