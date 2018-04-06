@@ -111,6 +111,12 @@ width = args.width
 num_epoch = args.epoch
 epoch_n = 20
 
+print('c_in:{}'.format(ch_in))
+print('c_out:{}'.format(ch_out))
+print('depth:{}'.format(depth))
+print('width:{}'.format(width))
+print('num_epoch:{}'.format(num_epoch))
+
 #%%
 
 

@@ -113,7 +113,34 @@ def rle_fromImage(x, centroids, cut_off = 0.5):
         
     return [rle_encoding(lab_img==i) for i in range(1, lab_img.max()+1)]
 
-    
+# --------
+    # reading all types of iamges
+
+def _read_images(dSeries):
+    print('Run process (%s)... for reading images' % ( os.getpid()))
+    return dSeries.map(_read_and_stack).map( lambda x: x[:,:,:IMG_CHANNELS])
+
+def _read_bw_images( dSeries):
+    print('Run process (%s)... for reading b\& w images' % ( os.getpid()))
+    return dSeries.map(_read_and_stack).map( lambda x: x.astype(float))
+
+def _get_boundaries( dSeries):
+    print('Run process (%s)... for geting boundaries' % ( os.getpid()))
+    return dSeries.map( _stack_boundary).map( lambda x: morphology.dilation( x.astype(float)) )
+
+
+def _get_centroids( dSeries):
+    print('Run process (%s)... for geting centroids' % ( os.getpid()))
+    return dSeries.map( _stack_centroid_images).map( lambda x:  _multidilation(x, 2))
+
+def _get_masks( dSeries):
+    print('Run process (%s)... for reading masks' % ( os.getpid()))
+    return dSeries.map(_read_and_stack).map(lambda x: x.astype(float))
+
+def _get_eroded_masks( dSeries):
+    print('Run process (%s)... for reading and eroding masks' % ( os.getpid()))
+    return dSeries.map(_stack_eroded_masks).map(lambda x: x.astype(float))
+
 class TrainDf(object):
     
     def __init__( self, data_dir, target_key):
@@ -187,10 +214,10 @@ class TrainDf(object):
         train_img_df = pd.DataFrame(train_rows)
 
         
-        train_img_df['images'] = self._read_images(train_img_df['images'])
+        train_img_df['images'] = _read_images(train_img_df['images'])
         
         print( 'Reading {}...'.format( target_key))
-        train_img_df[target_key] = self._read_bw_images(train_img_df[target_key])    
+        train_img_df[target_key] = _read_bw_images(train_img_df[target_key])    
 
         print('Done.')
         print('Reading time: ', time.time() - clock)
@@ -199,31 +226,6 @@ class TrainDf(object):
 
         self.df = train_img_df
         self.labels = train_labels
-        
-    def _read_images(self, dSeries):
-        print('Run process (%s)... for reading images' % ( os.getpid()))
-        return dSeries.map(_read_and_stack).map( lambda x: x[:,:,:IMG_CHANNELS])
-
-    def _read_bw_images(self, dSeries):
-        print('Run process (%s)... for reading b\& w images' % ( os.getpid()))
-        return dSeries.map(_read_and_stack).map( lambda x: x.astype(float))
-
-    def _get_boundaries(self, dSeries):
-        print('Run process (%s)... for geting boundaries' % ( os.getpid()))
-        return dSeries.map( _stack_boundary).map( lambda x: morphology.dilation( x.astype(float)) )
-
-    
-    def _get_centroids(self, dSeries):
-        print('Run process (%s)... for geting centroids' % ( os.getpid()))
-        return dSeries.map( _stack_centroid_images).map( lambda x:  _multidilation(x, 2))
-
-    def _get_masks(self, dSeries):
-        print('Run process (%s)... for reading masks' % ( os.getpid()))
-        return dSeries.map(_read_and_stack).map(lambda x: x.astype(float))
-
-    def _get_eroded_masks(self, dSeries):
-        print('Run process (%s)... for reading and eroding masks' % ( os.getpid()))
-        return dSeries.map(_stack_eroded_masks).map(lambda x: x.astype(float))
         
     def count(self):
         """
@@ -235,37 +237,99 @@ class TrainDf(object):
         print('Monochromatic images: ')
         self.df_monochrom['images'].map( lambda x: x.shape).value_counts()
         
+
   
+class TestDf(object):
+    def __init__( self, data_dir,stage_label = 'stage1'):
+        """
+        read the data from folder
+        ------------
+        Par : 
+            data_dir: data directory
+        """       
+        #% load the input label csv
+        allimagepath = glob.glob(os.path.join( data_dir, '{}_*'.format(stage_label),
+                                         '*' , '*', '*'))
+        img_df = pd.DataFrame({'path': allimagepath})
         
+        if platform.system() == 'Windows':
+            split_str = '\\'
+        else:
+            split_str = '/'
+        
+        img_id = lambda inpath: inpath.split(split_str)[-3]
+        img_type = lambda inpath: inpath.split(split_str)[-2]
+        img_group =  lambda inpath: inpath.split(split_str)[-4].split('_')[-1]
+        img_stage =  lambda inpath: inpath.split(split_str)[-4].split('_')[0]
+        
+        img_df['ImageId'] = img_df['path'].map( img_id)
+        img_df['ImageType'] = img_df['path'].map( img_type)
+        img_df['TrainingSplit'] = img_df['path'].map( img_group)
+        img_df['Stage'] = img_df['path'].map( img_stage)
+        
+        #img_df.sample(2)
+        
+        #% load the traing data
+        train_df = img_df.query('TrainingSplit=="train"')
+        
+        train_rows = []
+        
+        group_cols = ['Stage', 'ImageId']
+        
+        for n_group, n_rows in train_df.groupby(group_cols):
+        
+          # get the n_group into a dictionary
+          c_row = {col_name: col_v for col_name, col_v, in zip(group_cols, n_group)}
+          
+          # get a list of the path for masks
+          c_row['images'] = n_rows.query('ImageType=="images"')['path'].values.tolist()
+          
+          train_rows += [c_row]
+          
+        train_img_df = pd.DataFrame(train_rows)
+    
+        
+        train_img_df['images'] = _read_images(train_img_df['images'])
+               
+        train_img_df['chromatic'] = train_img_df['images'].map( isChromatic )  
+        
+        self.df = train_img_df
+       
+    def predict_merged_masks(self, network_monochrom, network_chrom):
+        self.df.query('chromatic=="False"')['merged_masks'] = self.df.query('chromatic=="False"')['images'].map(network_monochrom.predict )
+        self.df.query('chromatic=="True"')['merged_masks'] = self.df.query('chromatic=="True"')['images'].map(network_chrom.predict )
+    
+    def predict_eroded_masks(self, network_monochrom, network_chrom):
+        self.df.query('chromatic=="False"')['eroded_masks'] = self.df.query('chromatic=="False"')['images'].map(network_monochrom.predict )
+        self.df.query('chromatic=="True"')['eroded_masks'] = self.df.query('chromatic=="True"')['images'].map(network_chrom.predict )
         
         
 
 class NucleiDataset(Dataset):
-  """ chromatic images dataset. """
-  
-  def __init__(self, df, key = 'merged_masks', transform = None):
-    '''
-     Args:
-         key: str or None. Can 'merged_masks' or 'eroded_masks'
-    '''
-    self.key = key
-    self.df = df
-    self.transform = transform
+    """ chromatic images dataset. """
+    def __init__(self, df, key = 'merged_masks', transform = None):
+        '''
+         Args:
+             key: str or None. Can 'merged_masks' or 'eroded_masks'
+        '''
+        self.key = key
+        self.df = df
+        self.transform = transform
+        
+    def __len__(self):
+        return len(self.df)
+      
+    def __getitem__(self, index):
+        images = self.df.iloc[index]['images'].astype('float32')
+        target = self.df.iloc[index][self.key].astype('float32') # np.moveaxis(,  -1, 0)
+        target_2ch = np.stack( (1 - target, target), axis=2)
+        
+        sample = {'images': images, self.key: target_2ch}
+        if self.transform:
+                sample = self.transform(sample)
     
-  def __len__(self):
-    return len(self.df)
-  
-  def __getitem__(self, index):
-    images = self.df.iloc[index]['images'].astype('float32')
-    target = self.df.iloc[index][self.key].astype('float32') # np.moveaxis(,  -1, 0)
-    target_2ch = np.stack( (1 - target, target), axis=2)
-    
-    sample = {'images': images, self.key: target_2ch}
-    if self.transform:
-            sample = self.transform(sample)
-
-    return sample
-  
+        return sample
+      
      
 class Rescale(object):
     """ Rescale the images in a sample

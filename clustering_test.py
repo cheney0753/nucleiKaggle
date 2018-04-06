@@ -55,6 +55,8 @@ def _read_and_stack_eroded_masks( in_img_list):
 def _read_and_stack(in_img_list):
     return np.sum(np.stack([ io.imread(c_img) / 255.0 for c_img in in_img_list]), 0)
 
+def _read_multiply_stack(in_img_list):
+    return np.sum(np.stack([ (i+1)*(io.imread(c_img) / 255.0) for (i, c_img) in enumerate(in_img_list)]), 0)
 
 #%% prepare the data 
 cwdir = os.path.abspath(os.path.dirname(__file__))
@@ -100,6 +102,8 @@ train_labels = pd.read_csv(
 train_labels['EncodedPixels'] = train_labels['EncodedPixels'].map(lambda en: [x for x in en.split(' ')] )
 
 
+#%%
+
 def compare_rle(tl_rles, train_row_rles):
     tl_rles = sorted(tl_rles, key = lambda x: int(x[0]))
     
@@ -117,12 +121,10 @@ def compare_rle(tl_rles, train_row_rles):
     print('Matches: %d, Mismatches: %d, Accuracy: %2.1f%%' % (match, mismatch, 100.0*match/(match+mismatch)))
 
     return (match, mismatch, 100.0*match/(match+mismatch))
-#%%
-
 def get_coordinate( img):
     return np.stack( np.nonzero(img)).transpose()
 
-def label_combined(merged_masks, eroded_masks, window_size = 6):
+def label_combined(merged_masks, eroded_masks, window_size = 10):
     # first label the eroded_masks, where connectivity is separated
     assert isinstance( window_size, (int, tuple))
     
@@ -165,7 +167,7 @@ def label_combined(merged_masks, eroded_masks, window_size = 6):
             pix_til = np.tile( pix, (pix_lab.shape[0], 1))
             
             dist_arr = pix_til-pix_lab
-            dd = ( np.inner( dist_arr,dist_arr).sum(axis = 1)).sum()/dist_arr.shape[0]
+            dd = (( dist_arr * dist_arr).sum(axis = 1) **0.5 ).sum()/dist_arr.shape[0]
 
             if dist > dd:
                 dist = dd
@@ -179,6 +181,10 @@ def label_combined(merged_masks, eroded_masks, window_size = 6):
     clock = time.time()
     return comb_img.astype(int)
 
+def img2rle(lab_img):
+    return [rle_encoding(lab_img==i) for i in range(1, lab_img.max()+1)]
+
+
 def rle_combined(merged_masks, eroded_masks):
     
     lab_img = label_combined(merged_masks, eroded_masks)
@@ -186,7 +192,8 @@ def rle_combined(merged_masks, eroded_masks):
     if lab_img.max()<1:
         lab_img[0,0] = 1 # ensure at least one prediction per image
         
-    return [rle_encoding(lab_img==i) for i in range(1, lab_img.max()+1)]
+    rle_list = img2rle( lab_img)
+    return (rle_list, lab_img)
 
 def rle_encoding( image):
     """ Encode a binary image to rle"""
@@ -220,15 +227,17 @@ for n_group, n_rows in train_df.groupby(group_cols):
     c_row['merged_masks'] = n_rows.query('ImageType=="merged_masks"')['path'].values.tolist()
     c_row['eroded_masks'] = n_rows.query('ImageType=="eroded_masks"')['path'].values.tolist()
     # create a directory for saving the merged masks and eroded masks
-        
+    
+    c_row['colored_masks'] = _read_multiply_stack( n_rows.query('ImageType=="masks"')['path'].values.tolist())
+    
     merged_masks = (io.imread(c_row['merged_masks'][0])/255).astype(int)
     
     eroded_masks = (io.imread(c_row['eroded_masks'][0])/255).astype(int)
     
     tl_rles = train_labels.query('ImageId=="{}"'.format(n_rows['ImageId'].iloc[0]))['EncodedPixels'].values.tolist()
     
-    cb_rle = rle_combined( merged_masks, eroded_masks)
-  
+    cb_rle, lab_img = rle_combined( merged_masks, eroded_masks)
+    cb_rle = img2rle( c_row['colored_masks'].astype(int))
     result.append( compare_rle( tl_rles, cb_rle))
   
     

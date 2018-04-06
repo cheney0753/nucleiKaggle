@@ -118,14 +118,24 @@ class msdSegModule(nn.Module):
         
         if  x is not None:
             self.set_input(x)
-        if target is not None:
-            self.set_target(target)
             
         self.output = self.net( self.input)
+        
+        if target is not None:
+            self.set_target(target)
+        else:
+            self.set_target(t.zeros( self.output.shape))
+            
 #        print(self.target.data.shape)
         self.loss = crossEntropy2d_sum(self.output, self.target)
 #        self.loss = self.criterion(self.output,self.target.squeeze(1))
+    def predict(self, x = None):
         
+        if  x is not None:
+            self.set_input(x)
+            
+        return self.net( self.input)
+    
     def learn(self, x = None, target = None):
         self.forward(x, target)
         self.optimizer.zero_grad()
