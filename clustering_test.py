@@ -1,10 +1,10 @@
 #%matplotlib qt
 isCUDA = True
-#isTest = False
+#isTest = True
 #%% Import modules
 import argparse
 parser =  argparse.ArgumentParser()
-parser.add_argument("-t","--test", help="set the program in a test mode with few data and expochs.",  action="store_true")
+parser.add_argument("-t","--test", help="set the program in a test mode with few data and expochs.",  action="store_true", default = False)
 parser.add_argument("-numerd", "--number-erosion", help = "set the number of erosion", type = int, default = 2)
 parser.add_argument("-minerd", "--minimum-erosion", help = "set the minimal number of pixels after erosion", type = int, default = 100)
 
@@ -13,7 +13,7 @@ args = parser.parse_args()
 isTest = args.test
 if args.test:
     print('In the test mode.')
-
+isTest = True
 import numpy as np
 import os, time, glob, sys
 import datetime
@@ -29,7 +29,7 @@ import time
 #%%
 
 now = datetime.datetime.now()
-plt.switch_backend('agg')
+plt.switch_backend('QT5Agg')
 #plt.ioff()
 IMG_CHANNELS = 3
  
@@ -103,15 +103,14 @@ train_labels['EncodedPixels'] = train_labels['EncodedPixels'].map(lambda en: [x 
 def compare_rle(tl_rles, train_row_rles):
     tl_rles = sorted(tl_rles, key = lambda x: int(x[0]))
     
-    train_row_rles = sorted(train_row_rles, key = lambda x: x[0])
+    train_row_rles = sorted(train_row_rles, key = lambda x: int(x[0]))
     
     for tl, tr in zip(tl_rles, train_row_rles):
         print(tl[0], tr[0])
     match, mismatch = 0, 0
-    for img_rle, train_rle in zip(sorted(train_row_rles, key = lambda x: x[0]), 
-                                 sorted(tl_rles, key = lambda x: int(x[0]))):
+    for img_rle, train_rle in zip(train_row_rles, tl_rles):
         for i_x, i_y in zip(img_rle, train_rle):
-            if i_x == int(i_y):
+            if int(i_x) == int(i_y):
                 match += 1
             else:
                 mismatch += 1
@@ -123,11 +122,13 @@ def compare_rle(tl_rles, train_row_rles):
 def get_coordinate( img):
     return np.stack( np.nonzero(img)).transpose()
 
-def label_combined(merged_masks, eroded_masks):
+def label_combined(merged_masks, eroded_masks, window_size = 6):
     # first label the eroded_masks, where connectivity is separated
+    assert isinstance( window_size, (int, tuple))
     
     lab_img = measure.label( eroded_masks)
     
+    comb_img = lab_img.copy()
     boundaries = (merged_masks - eroded_masks)>0
     
     bd_pixels = get_coordinate( boundaries)
@@ -136,28 +137,47 @@ def label_combined(merged_masks, eroded_masks):
         lab_img[0,0] = 1 # ensure at least one prediction per image
         
     clock = time.time()
-
+    
+    img_shape = eroded_masks.shape
+    mask_window = np.zeros( img_shape)
+    
     for ip in range(bd_pixels.shape[0]):
         pix = bd_pixels[ip,]
         
         dist = sys.maxsize
         lab = 0 
+        
+        mask_window.fill(0)
+        wr = (max(0 , pix[0]-window_size//2 ), min(img_shape[0], pix[0]+window_size//2 ))
+        wc = (max(0 , pix[1]-window_size//2 ), min(img_shape[1], pix[1]+window_size//2 ))
+
+        mask_window[wr[0]:wr[1], wc[0]:wc[1]] = 1
+        
         for i in range(1, lab_img.max()+1):
-            pix_lab = get_coordinate( lab_img == i)
+            # apply a masking window to the mask of label i
+            mkimg = (lab_img == i) * mask_window
+            if mkimg.max()==0:
+                continue
+            
+            pix_lab = get_coordinate( mkimg)
+
+                
             pix_til = np.tile( pix, (pix_lab.shape[0], 1))
             
             dist_arr = pix_til-pix_lab
-            dd = ( np.inner( dist_arr,dist_arr).sum(axis = 1) ** 0.5).sum()/dist_arr.shape[0]
+            dd = ( np.inner( dist_arr,dist_arr).sum(axis = 1)).sum()/dist_arr.shape[0]
+
             if dist > dd:
                 dist = dd
                 lab = i
                 
-        eroded_masks[pix[0], pix[1]] = lab
-        print( 'pixel no. {}'.format(ip), ' Total: {}'.format(bd_pixels.shape[0]))
-        print('Runtime for one pixel: {}'.format(time.time()-clock))
-        clock = time.time()
-
-    return eroded_masks
+        comb_img[pix[0], pix[1]] = lab
+#        print( 'pixel no. {}'.format(ip), ', label: {}'.format(lab), ' Total: {}'.format(bd_pixels.shape[0]))
+#        print('Runtime for one pixel: {}'.format(time.time()-clock))
+#        clock = time.time()
+    print('Runtime for one image: {}'.format(time.time()-clock))
+    clock = time.time()
+    return comb_img.astype(int)
 
 def rle_combined(merged_masks, eroded_masks):
     
@@ -201,9 +221,9 @@ for n_group, n_rows in train_df.groupby(group_cols):
     c_row['eroded_masks'] = n_rows.query('ImageType=="eroded_masks"')['path'].values.tolist()
     # create a directory for saving the merged masks and eroded masks
         
-    merged_masks = io.imread(c_row['merged_masks'][0])/255
+    merged_masks = (io.imread(c_row['merged_masks'][0])/255).astype(int)
     
-    eroded_masks = io.imread(c_row['eroded_masks'][0])/255
+    eroded_masks = (io.imread(c_row['eroded_masks'][0])/255).astype(int)
     
     tl_rles = train_labels.query('ImageId=="{}"'.format(n_rows['ImageId'].iloc[0]))['EncodedPixels'].values.tolist()
     

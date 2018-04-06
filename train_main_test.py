@@ -17,11 +17,23 @@ parser.add_argument("-t","--test", help="set the program in a test mode with few
 parser.add_argument("-e","--epoch",help="number of epochs for training", default = 150, type = int)
 parser.add_argument("-d","--depth",help="number of depth for the MSD-net", default = 30, type = int)
 parser.add_argument("-w","--width",help="number of width for the MSD-net", default = 2, type = int)
+parser.add_argument("--training_type", help="types of training. 1: merged_masks, 2: eroded_masks, 3: both", type = int, default = 3)
+parser.add_argument("--image_type", help="types of training. 1: monochrom, 2: chrom, 3: both", type = int, default =3)
 
 args = parser.parse_args()
 isTest = args.test
 if args.test:
     print('In the test mode.')
+
+try:
+   assert args.image_type in (1,2,3)
+except AssertionError:
+    raise Exception('image_type set wrong')
+    
+try:
+   assert args.training_type in (1,2,3)
+except AssertionError:
+    raise Exception('training_type set wrong')
 
 #isTest = True    
 #%%
@@ -77,8 +89,14 @@ print('Print to: ',f_stdout)
 sys.stdout = f
 
 stage = 'train'
-training_types = ('merged_masks','eroded_masks')
-image_types = ('monochrom', 'chrom')
+
+trdict = {1:('merged_masks',), 2: ('eroded_masks',), 3: ('merged_masks','eroded_masks') }
+imdict = {1:('monochrom',), 2: ('chrom',), 3: ('monochrom', 'chrom')}
+training_types = trdict[ args.training_type]
+image_types = imdict[args.image_type]
+print('Traing_type is {}.'.format( training_types))
+print('Image_type is {}.\n'.format( training_types))
+
 
 #%%  msdNet
 
