@@ -19,6 +19,7 @@ parser.add_argument("-d","--depth",help="number of depth for the MSD-net", defau
 parser.add_argument("-w","--width",help="number of width for the MSD-net", default = 2, type = int)
 parser.add_argument("--training_type", help="types of training. 1: merged_masks, 2: eroded_masks, 3: both", type = int, default = 3)
 parser.add_argument("--image_type", help="types of training. 1: monochrom, 2: chrom, 3: both", type = int, default =3)
+parser.add_argument("--dir", help="Output dir", type = str)
 
 args = parser.parse_args()
 isTest = args.test
@@ -72,6 +73,9 @@ if isTest:
     data_dir = os.path.join(cwdir, os.pardir, 'data_sample')
     
 data_dir = os.path.abspath( data_dir)
+
+if args.dir is not None:
+    temp_dir = args.dir
 
 temp_dir = os.path.abspath( os.path.join( cwdir, os.pardir, 'temp', '%02d%02d'%(now.month, now.day)))
 
