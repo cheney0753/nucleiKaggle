@@ -99,7 +99,7 @@ imdict = {1:('monochrom',), 2: ('chrom',), 3: ('monochrom', 'chrom')}
 training_types = trdict[ args.training_type]
 image_types = imdict[args.image_type]
 print('Traing_type is {}.'.format( training_types))
-print('Image_type is {}.\n'.format( training_types))
+print('Image_type is {}.\n'.format( image_types))
 
 
 #%%  msdNet
