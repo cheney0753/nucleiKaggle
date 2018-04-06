@@ -24,6 +24,7 @@ from torch.autograd import Variable
 import torch.optim as optim
 from skimage import measure
 from matplotlib import pyplot as plt
+import time
 #from sklearn import cluster
 #%%
 
@@ -116,7 +117,7 @@ def compare_rle(tl_rles, train_row_rles):
                 mismatch += 1
     print('Matches: %d, Mismatches: %d, Accuracy: %2.1f%%' % (match, mismatch, 100.0*match/(match+mismatch)))
 
-
+    return (match, mismatch, 100.0*match/(match+mismatch))
 #%%
 
 def get_coordinate( img):
@@ -134,7 +135,8 @@ def label_combined(merged_masks, eroded_masks):
     if lab_img.max()<1:
         lab_img[0,0] = 1 # ensure at least one prediction per image
         
- 
+    clock = time.time()
+
     for ip in range(bd_pixels.shape[0]):
         pix = bd_pixels[ip,]
         
@@ -151,7 +153,10 @@ def label_combined(merged_masks, eroded_masks):
                 lab = i
                 
         eroded_masks[pix[0], pix[1]] = lab
-    
+        print( 'pixel no. {}'.format(ip), ' Total: {}'.format(bd_pixels.shape[0]))
+        print('Runtime for one pixel: {}'.format(time.time()-clock))
+        clock = time.time()
+
     return eroded_masks
 
 def rle_combined(merged_masks, eroded_masks):
@@ -183,6 +188,7 @@ train_rows = []
 
 group_cols = ['Stage', 'ImageId']
 
+result = []
 for n_group, n_rows in train_df.groupby(group_cols):
     
     # get the n_group into a dictionary
@@ -203,7 +209,7 @@ for n_group, n_rows in train_df.groupby(group_cols):
     
     cb_rle = rle_combined( merged_masks, eroded_masks)
   
-    compare_rle( tl_rles, cb_rle)
+    result.append( compare_rle( tl_rles, cb_rle))
   
     
     print('runtime is: ', time.time() - clock)
