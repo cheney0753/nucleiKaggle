@@ -162,7 +162,8 @@ class msdSegModule(nn.Module):
                 self.save_input(os.path.join(save_dir, 'input_{}.png'.format( epoch)))
                 self.save_target(os.path.join(save_dir, 'target_{}.png'.format( epoch)))
                 #self.save_diff(os.path.join(save_dir, 'diff_{}.png'.format( epoch)))
-           
+                self.save_network(save_dir, 'msdNet_{}.pytorch'.format(epoch))
+
         return loss_list
             
             
