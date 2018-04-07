@@ -183,7 +183,7 @@ class TrainDf(object):
         print( 'Reading {}...'.format( target_key))
         train_img_df[target_key] = _read_bw_images(train_img_df[target_key])    
 
-        print('Done.')
+        print('Done. {} data have been read.'.format(train_img_df.size))
         print('Reading time: ', time.time() - clock)
         
         train_img_df['chromatic'] = train_img_df['images'].map( isChromatic )  
