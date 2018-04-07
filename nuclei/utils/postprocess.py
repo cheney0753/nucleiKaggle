@@ -12,7 +12,7 @@ from skimage import morphology,io, transform, measure
 from scipy import ndimage as ndi
 
 __all__ = ('rle_encoding', 'img2rle', 'compare_rle', 'watershed_label',
-           'watershed_rle', 'combined_label','combined_rle' )
+           'watershed_rle', 'combined_label','combined_rle' , 'clean_mask')
 
 isPrint = False
 def rle_encoding( image):
@@ -86,9 +86,9 @@ def watershed_label(mask, labled_ct):
     
     return labels
 
-def watershed_rle(x, centroids, cut_off = 0.5):
+def watershed_rle(img, centroids, cut_off = 0.5):
     
-    lab_img = watershed_label((x>cut_off).astype(float), centroids)
+    lab_img = watershed_label((img>cut_off).astype(float), centroids)
     
     if lab_img.max()<1:
         lab_img[0,0] = 1 # ensure at least one prediction per image
@@ -165,3 +165,9 @@ def combined_rle(lab_img):
     rle_list = img2rle( lab_img)
     
     return (rle_list, lab_img)
+
+
+def clean_mask(img, cut_off = 0.5):
+    
+    mask  = (img>cut_off).astype(int)
+    return morphology.opening(morphology.closing(mask, morphology.disk(1)), morphology.disk(3))

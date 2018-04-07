@@ -204,7 +204,7 @@ class TrainDf(object):
 
   
 class TestDf(object):
-    def __init__( self, data_dir,stage_label = 'stage1'):
+    def __init__( self, data_dir,stage_label = 'stage1', cuf_off = 0.5):
         """
         read the data from folder
         ------------
@@ -212,6 +212,8 @@ class TestDf(object):
             data_dir: data directory
         """       
         #% load the input label csv
+        self.cut_off = cut_off
+        
         allimagepath = glob.glob(os.path.join( data_dir, '{}_*'.format(stage_label),
                                          '*' , '*', '*'))
         img_df = pd.DataFrame({'path': allimagepath})
@@ -258,15 +260,17 @@ class TestDf(object):
         train_img_df['chromatic'] = train_img_df['images'].map( isChromatic )  
         
         self.df = train_img_df
-       
+    
     def predict_merged_masks(self, network_monochrom, network_chrom):
-        self.df.query('chromatic=="False"')['merged_masks'] = self.df.query('chromatic=="False"')['images'].map(network_monochrom.predict )
-        self.df.query('chromatic=="True"')['merged_masks'] = self.df.query('chromatic=="True"')['images'].map(network_chrom.predict )
+        self.df.query('chromatic=="False"')['merged_masks'] = self.df.query('chromatic=="False"')['images'].map(network_monochrom.predict ).map(self._clean_mask)
+        self.df.query('chromatic=="True"')['merged_masks'] = self.df.query('chromatic=="True"')['images'].map(network_chrom.predict ).map(self._clean_mask)
     
     def predict_eroded_masks(self, network_monochrom, network_chrom):
-        self.df.query('chromatic=="False"')['eroded_masks'] = self.df.query('chromatic=="False"')['images'].map(network_monochrom.predict )
-        self.df.query('chromatic=="True"')['eroded_masks'] = self.df.query('chromatic=="True"')['images'].map(network_chrom.predict )
+        self.df.query('chromatic=="False"')['eroded_masks'] = self.df.query('chromatic=="False"')['images'].map(network_monochrom.predict ).map(self._clean_mask)
+        self.df.query('chromatic=="True"')['eroded_masks'] = self.df.query('chromatic=="True"')['images'].map(network_chrom.predict ).map(self._clean_mask)
     
+    def _clean_mask(self, mask):
+        return postprocess.clean_mask(mask, self.cut_off)
 
     @staticmethod
     def _turn2label(dSeries):
