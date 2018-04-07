@@ -18,3 +18,6 @@ __all__ += data.__all__
 
 from .plot_data import *
 __all__ += plot_data.__all__
+
+from .postproc import *
+__all__ += postprocess.__all__

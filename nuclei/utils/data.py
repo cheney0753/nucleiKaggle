@@ -24,7 +24,7 @@ import unittest
 IMG_CHANNELS = 3
 
 from nuclei.utils.image import isChromatic
-
+from nuclei.utils import postprocess
 
 
 __all__ = ('TrainDf', 'NucleiDataset', 'Rescale', 'RandomCrop', 'ToTensor' )
@@ -76,42 +76,6 @@ def _read_and_erode( mask_img):
 def _stack_eroded_masks( in_img_list):
     return np.sum(np.stack([ _read_and_erode(im) for im in in_img_list]), 0)
     
-def rle_encoding( image):
-    """ Encode a binary image to rle"""
-    
-    bimage = np.where( image.T.flatten()==1)[0] ## transform the image 
-    # The pixels are one-indexed and numbered from top to bottom, then left to right:
-    # 1 is pixel (1,1), 2 is pixel (2,1), 
-    
-    r_length = []
-    prev = -2
-    for b in bimage:
-        if (b > prev+1 ) : r_length += [b+1, 0]
-        r_length[-1] +=1
-        prev = b
-        
-    return r_length
-
-def watershed_label(mask, labled_ct):
-    """
-    watershed labeling using the predicted centroids
-    """
-    distance = ndi.distance_transform_edt(mask)
-    
-    #markers = ndi.label(local_maxi)
-    labels = morphology.watershed(-distance, labled_ct, mask=mask)
-    
-    return labels
-
-
-def rle_fromImage(x, centroids, cut_off = 0.5):
-    
-    lab_img = watershed_label((x>cut_off).astype(float), centroids)
-    
-    if lab_img.max()<1:
-        lab_img[0,0] = 1 # ensure at least one prediction per image
-        
-    return [rle_encoding(lab_img==i) for i in range(1, lab_img.max()+1)]
 
 # --------
     # reading all types of iamges
@@ -302,9 +266,24 @@ class TestDf(object):
     def predict_eroded_masks(self, network_monochrom, network_chrom):
         self.df.query('chromatic=="False"')['eroded_masks'] = self.df.query('chromatic=="False"')['images'].map(network_monochrom.predict )
         self.df.query('chromatic=="True"')['eroded_masks'] = self.df.query('chromatic=="True"')['images'].map(network_chrom.predict )
-        
-        
+    
 
+    @staticmethod
+    def _turn2label(dSeries):
+        return postprocess.combined_label(dSeries['merged_masks'], dSeries['eroded_masks'])
+    
+    @staticmethod
+    def _combined_rle(dSeries):
+        return postprocess.combined_rle( postprocess.combined_label( dSeries['merged_masks'], dSeries['eroded_masks']))
+    
+    def lable_masks(self, method = 'combined'):
+        self.df.query('chromatic=="False"')['labled_masks'] = self.df.query('chromatic=="False"').apply( TestDf._turn2label, axis = 1)
+        self.df.query('chromatic=="True"')['labled_masks'] = self.df.query('chromatic=="True"').apply( TestDf._turn2label, axis = 1)
+    
+    def generate_rle(self, method = 'combined'):   
+        self.df.query('chromatic=="False"')['rle'] = self.df.query('chromatic=="False"')['labled_masks'].map(postprocess.combined_rle)
+        self.df.query('chromatic=="True"')['rle'] = self.df.query('chromatic=="True"')['labled_masks'].map(postprocess.combined_rle)
+    
 class NucleiDataset(Dataset):
     """ chromatic images dataset. """
     def __init__(self, df, key = 'merged_masks', transform = None):
