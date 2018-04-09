@@ -14,12 +14,29 @@ isCUDA = True
 import argparse
 parser =  argparse.ArgumentParser()
 parser.add_argument("-t","--test", help="set the program in a test mode with few data and expochs.",  action="store_true")
+parser.add_argument("-e","--epoch",help="number of epochs for training", default = 150, type = int)
+parser.add_argument("-d","--depth",help="number of depth for the MSD-net", default = 30, type = int)
+parser.add_argument("-w","--width",help="number of width for the MSD-net", default = 2, type = int)
+parser.add_argument("--training_type", help="types of training. 1: merged_masks, 2: eroded_masks, 3: both", type = int, default = 3)
+parser.add_argument("--image_type", help="types of training. 1: monochrom, 2: chrom, 3: both", type = int, default =3)
+parser.add_argument("--dir", help="Output dir", type = str)
+
 args = parser.parse_args()
 isTest = args.test
 if args.test:
     print('In the test mode.')
 
-isTest = True    
+try:
+   assert args.image_type in (1,2,3)
+except AssertionError:
+    raise Exception('image_type set wrong')
+    
+try:
+   assert args.training_type in (1,2,3)
+except AssertionError:
+    raise Exception('training_type set wrong')
+
+#isTest = True    
 #%%
 import numpy as np
 import torch
@@ -28,16 +45,17 @@ from scipy import ndimage
 from matplotlib import pyplot as plt
 import os, sys
 import datetime
+import pandas as pd
 now = datetime.datetime.now()
 #%matplotlib agg
 plt.ioff()
 #%%
 from nuclei.kernel import cnnModule
 from nuclei.kernel.lossFunc import diceLoss, IoU_mean
-from torch.autograd import Variable
-import torch.optim as optim
 from skimage import measure
 from sklearn import cluster
+
+from torchvision import transforms
 #%%
 
 from nuclei.kernel import msdModule
@@ -46,173 +64,121 @@ from nuclei.kernel.lossFunc import crossEntropy2d_sum
 from nuclei.utils import data
 from nuclei.utils import plot_data
 
-#%% 
-
 
 #%% prepare the data 
 cwdir = os.path.abspath(os.path.dirname(__file__))
 data_dir  = os.path.join( cwdir, os.pardir, 'data')
+
 if isTest:
     data_dir = os.path.join(cwdir, os.pardir, 'data_sample')
-
-temp_dir = os.path.join( cwdir, os.pardir, 'temp', '%d%d%d'%(now.year, now.month, now.day))
-orig_stdout = sys.stdout
-
-f_stdout = os.path.join(temp_dir, 'stdout.txt')
-f=open( f_stdout, 'w')
-
-print('Print to: ',f_stdout)
-sys.stdout = f
-
     
-print('Reading from data folder: ', data_dir)
+data_dir = os.path.abspath( data_dir)
+
+if args.dir is not None:
+    temp_dir = args.dir
+
+temp_dir = os.path.abspath( os.path.join( cwdir, os.pardir, 'temp', '%02d%02d'%(now.month, now.day)))
 
 try:
     assert os.path.exists(temp_dir)
 except AssertionError:
     os.mkdir(temp_dir)
+    
+orig_stdout = sys.stdout
 
-traindata = data.TrainDf(data_dir)
+f_stdout = os.path.abspath(os.path.join(temp_dir, 'stdout.txt'))
+f=open( f_stdout, 'w')
 
-chromaticDS = data.NucleiDataset(traindata.df.query('chromatic==True').reset_index())
-
-dataloader = DataLoader(chromaticDS, batch_size=1,
-                        shuffle=True, num_workers=8)
-
+print('Print to: ',f_stdout)
+sys.stdout = f
 
 stage = 'train'
-training_types = ('masks', 'centroids')
-image_types = ('chrom', 'monochrom')
+
+trdict = {1:('merged_masks',), 2: ('eroded_masks',), 3: ('merged_masks','eroded_masks') }
+imdict = {1:('monochrom',), 2: ('chrom',), 3: ('monochrom', 'chrom')}
+training_types = trdict[ args.training_type]
+image_types = imdict[args.image_type]
+print('Traing_type is {}.'.format( training_types))
+print('Image_type is {}.\n'.format( image_types))
+
 
 #%%  msdNet
 
 ch_in= 3
 ch_out = 2
-depth =70 
-width = 2
-epoch = 200
-if isTest:
-    epoch = 10
-epoch_n = 10
+depth =args.depth 
+width = args.width
+num_epoch = args.epoch
+epoch_n = 20
+
+print('c_in:{}'.format(ch_in))
+print('c_out:{}'.format(ch_out))
+print('depth:{}'.format(depth))
+print('width:{}'.format(width))
+print('num_epoch:{}'.format(num_epoch))
+
 #%%
 
-for trtype in training_types:
+
+for target_key in training_types:
+    
+        
+    print('Reading from data folder: ', data_dir)
+    traindata = data.TrainDf(data_dir, target_key= target_key )
+
     for imtype in image_types:
                 
-        msdNet_Net = msdModule.msdNet(ch_in, ch_out, depth, width )
         
         if imtype == 'chrom':
-            pdSeries = traindata.df.query('chromatic==True')
+            pdSeries = traindata.df.query('chromatic==True').reset_index()
         elif imtype == 'monochrom':
-            pdSeries = traindata.df.query('chromatic == False')
+            pdSeries = traindata.df.query('chromatic == False').reset_index()
         else:
             raise Exception('The image type isn\'t right.')
             
         # epoch number
+#        tsfm = transforms.Compose( ( data.RandomCrop(target_key, 255), data.ToTensor(target_key) ))
+        tsfm = data.ToTensor(target_key)
+        ds = data.NucleiDataset(pdSeries, key = target_key, transform= tsfm)
+        dataloader = DataLoader( ds , batch_size=1,
+                                shuffle=True, num_workers=8)
+
+
+        whatsgoingon =  imtype+'_'+stage+'_'+target_key
         
-        
-        optimizer = optim.Adam(msdNet_Net.parameters())
-        optimizer.zero_grad()
-        
-        whatsgoingon =  imtype+'_'+stage+'_'+trtype
-        
-        dir_wgo = os.path.join( temp_dir, whatsgoingon)
+        dir_wgo = os.path.abspath( os.path.join( temp_dir, whatsgoingon))
         
         try:
             assert os.path.exists( dir_wgo)
         except AssertionError:
-            os.mkdir( dir_wgo)
-            
+            os.mkdir( dir_wgo)            
             
         # % record the loss, and the output for every 30 epochs
-        loss_var = []
-        for ipc in range(epoch):
-            r_loss = 0.0
-            
-            for ide, (image_, mask_2ch, centroids_2ch) in enumerate(dataloader):  
-                optimizer.zero_grad()
-              
-              #forward
-        #        mask_2ch = torch.cat( (1 - mask_, mask_), dim=-3)[None, ...]
-                
-                
-                output_ = msdNet_Net(Variable(image_).cuda())
-                
-                if trtype == 'masks':
-                    expect = mask_2ch
-                elif trtype == 'centroids':
-                    expect = centroids_2ch
-                else:
-                    raise Exception('The training type isn\'t right.')
-                loss = crossEntropy2d_sum(output_.contiguous(), Variable(expect).cuda())
-
-                loss.backward()
-                optimizer.step()
-              
-                r_loss += loss.data[0]
-                
-           # print('[%d, %d print('[%d, %d] loss: %.5f'%(ipc + 1, ide + 1, r_loss/(ide+1) ))]')
-            
-            
-            loss_var.append(r_loss/ide)
-            
-            if ipc%epoch_n == 0 :
-                print('[%d, %d] loss: %.5f. time: %s'%(ipc + 1, ide + 1, r_loss/(ide+1), datetime.datetime.now() )) 
-                fig = plot_data.plot_network_output(msdNet_Net, pdSeries)
-                
-                fig.savefig( os.path.join(dir_wgo, 'training_images_{}.png'.format(ipc)))
-            
-            
-         # save the loss variation plot
         
+        msdNet = msdModule.msdSegModule(ch_in, ch_out, depth, width)
+
+        loss_list = msdNet.train(dataloader, num_epochs= num_epoch, target_key= target_key, savefigures = True, num_fig= 10, save_dir = dir_wgo  )
+          
+        loss_pd = pd.DataFrame( data = {'Iteration': list(range(len(loss_list))), 'Loss': loss_list})
+        loss_pd.to_csv( os.path.join( dir_wgo, 'loss.csv'))
+         # save the loss variation plot
         fig, ax = plt.subplots(1)
-        ax.plot( loss_var)
+        ax.plot( loss_list)
         ax.set_ylabel('BCE loss')
         ax.set_xlabel('Epoch')
         fig.savefig( os.path.join(dir_wgo, 'loss.png'))
         
         #% save the trained network
-        torch.save(msdNet_Net.state_dict(), os.path.join( dir_wgo, 'msdNet.pth.tar'))
+        msdNet.save_network(dir_wgo, 'msdNet.pytorch')
         print('msdNet of ' + whatsgoingon +' has been saved.' )
+
 sys.stdout = orig_stdout
 f.close()
-#%%        # example of reusing
-#        ch_in= 3
-#        ch_out = 2
-#        depth = 50
-#        width = 2
-##        
-#msdNet_chro_centroids_reload = msdModule.msdNet(ch_in, ch_out, depth, width)
-#msdNet_chro_centroids_reload.load_state_dict( torch.load(  os.path.join( dir_wgo, 'msdNet.pth.tar')))
-#
+#%% load the network and apply 
+msdNet_rl = msdModule.msdSegModule(ch_in, ch_out, depth, width)
 
-dir_wgo = '/export/scratch1/zhong/PhD_Project/Projects/Kaggle/nuclei/temp/201841/chrom_train_masks'
-msdNet_chro_centroids_reload = msdModule.msdNet(ch_in, ch_out, depth, width)
-msdNet_chro_centroids_reload.load_state_dict( torch.load(  os.path.join( dir_wgo, 'msdNet.pth.tar')))
-
-
-#%%
-
-
-##%% put the data into Variable
-#_, train_rle_row = next(traindata.df.sample(1).iterrows())
-#  
-#train_row_rles = data.rle_fromImage(train_rle_row['masks'])
-#
-#tl_rles = traindata.labels.query('ImageId=="{ImageId}"'.format(**train_rle_row))['EncodedPixels']
-#
-#tl_rles = sorted(tl_rles, key = lambda x: int(x[0]))
-#
-#train_row_rles = sorted(train_row_rles, key = lambda x: x[0])
-#
-#for tl, tr in zip(tl_rles, train_row_rles):
-#    print(tl[0], tr[0])
-#match, mismatch = 0, 0
-#for img_rle, train_rle in zip(sorted(train_row_rles, key = lambda x: x[0]), 
-#                             sorted(tl_rles, key = lambda x: int(x[0]))):
-#    for i_x, i_y in zip(img_rle, train_rle):
-#        if i_x == int(i_y):
-#            match += 1
-#        else:
-#            mismatch += 1
-#print('Matches: %d, Mismatches: %d, Accuracy: %2.1f%%' % (match, mismatch, 100.0*match/(match+mismatch)))
+msdNet_rl.load_network(dir_wgo,'msdNet.pytorch' )
+msdNet_rl.validate(dataloader, target_key)
+msdNet_rl.save_output(os.path.join(dir_wgo, 'output_{}.png'.format( 'test')))
+msdNet_rl.save_input(os.path.join(dir_wgo, 'input_{}.png'.format( 'test')))
+msdNet_rl.save_target(os.path.join(dir_wgo, 'target_{}.png'.format( 'test')))
