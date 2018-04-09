@@ -141,7 +141,10 @@ class msdSegModule(nn.Module):
         self.optimizer.zero_grad()
         self.loss.backward()
         self.optimizer.step()
-        
+     
+    def print_training(self, epoch = 0, loss = 0.0,  printTime = True):
+        print('Epoch: {}'.format(epoch), 'Loss: {}'.format(loss), 'Time: {}'.format( str(datetime.datetime.now())))
+
     def train(self, dataloader, num_epochs, target_key = 'merged_masks', savefigures = False, num_fig = 10, save_dir = '.' ):
         loss_list = []
         
@@ -155,15 +158,16 @@ class msdSegModule(nn.Module):
                 training_loss += self.get_loss()
                 
             loss_list.append( training_loss/len(dataloader))
-        
-            print('Loss: ',  training_loss/len(dataloader), 'Time: {}'.format( str(datetime.datetime.now())))
+            
+            self.print_training( epoch,  training_loss/len(dataloader))
+            
             if savefigures and epoch %( num_epochs// num_fig) == 0:
                 self.save_output(os.path.join(save_dir, 'output_{}.png'.format( epoch)))
                 self.save_input(os.path.join(save_dir, 'input_{}.png'.format( epoch)))
                 self.save_target(os.path.join(save_dir, 'target_{}.png'.format( epoch)))
                 #self.save_diff(os.path.join(save_dir, 'diff_{}.png'.format( epoch)))
                 self.save_network(save_dir, 'msdNet_{}.pytorch'.format(epoch))
-
+                
         return loss_list
             
             
