@@ -6,7 +6,7 @@ import argparse
 parser =  argparse.ArgumentParser()
 parser.add_argument("-t","--test", help="set the program in a test mode with few data and expochs.",  action="store_true")
 parser.add_argument("-numerd", "--number-erosion", help = "set the number of erosion", type = int, default = 2)
-parser.add_argument("-minerd", "--minimum-erosion", help = "set the minimal number of pixels after erosion", type = int, default = 100)
+parser.add_argument("-minerd", "--minimum-erosion", help = "set the minimal number of pixels after erosion", type = int, default = 50)
 
 args = parser.parse_args()
 
