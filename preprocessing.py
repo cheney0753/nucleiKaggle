@@ -57,8 +57,6 @@ def _read_and_stack(in_img_list):
 
 #%% prepare the data 
 cwdir = os.path.abspath(os.path.dirname(__file__))
-#cwdir = %pwd
-#data_dir  = r'C:\Users\zhong\Documents\zhong_personal\works\kaggle\nuclei\data_sample'
 if isTest:
     data_dir = os.path.join( cwdir, os.pardir, 'data_sample')
 else:

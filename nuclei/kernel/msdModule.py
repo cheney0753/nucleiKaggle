@@ -13,7 +13,6 @@ import torch.optim as optim
 import torch as t
 import torchvision.utils as tvu
 from nuclei.kernel.lossFunc import crossEntropy2d_sum
-
 import datetime
 import numpy as np
 from msd_pytorch.msd_module import (MSDModule, msd_dilation)
@@ -22,28 +21,7 @@ __all__ = ('msdSegModule', )
 
 from scipy import misc
 from nuclei.kernel.lossFunc import crossEntropy2d_sum
-
-def _image_save(filename, imarr, image_type ='input'):
-    #print('Image size: {}'.format(imarr.shape))
-    
-    try:
-        assert len(imarr.shape) == 3 or len(imarr.shape) ==2
-    except:
-        print('Can\'t save {}.'.format(image_type), ' Image size: {}'.format(imarr.shape))
-        return None
-        
-    if len(imarr.shape) == 3:
-        imarr = np.moveaxis(imarr, 0, 2)
-        assert imarr.shape[2] == 2 or imarr.shape[2] == 3
-    if imarr.dtype == np.float_:
-        imarr -= imarr.min()
-        imarr /= imarr.max()
-    if len(imarr.shape) == 2:
-        misc.imsave(filename, imarr)
-    elif imarr.shape[2] == 3:
-        misc.imsave(filename, imarr)
-    elif imarr.shape[2] == 2:
-        misc.imsave(filename, np.concatenate((imarr[:,:,0].squeeze(), imarr[:,:,1].squeeze())))
+from nuclei.utils.data import image_save
 
 
 
@@ -222,22 +200,22 @@ class msdSegModule(nn.Module):
     def save_output(self, filename):
         #tvu.save_image(self.output.data.squeeze(), filename)
         imarr = self.output.data.squeeze().cpu().numpy()        
-        _image_save(filename, imarr, 'output')
+        image_save(filename, imarr, 'output')
         
     def save_input(self, filename):
         #tvu.save_image(self.input.data.squeeze(), filename)
         imarr = self.input.data.squeeze().cpu().numpy()        
-        _image_save(filename, imarr, 'input')
+        image_save(filename, imarr, 'input')
          
     def save_target(self, filename):
         #tvu.save_image(self.target.data.squeeze(), filename)
         imarr = self.target.data.squeeze().cpu().numpy()
-        _image_save(filename, imarr, 'target')
+        image_save(filename, imarr, 'target')
         
     def save_diff(self, filename):
         #tvu.save_image(t.abs(self.target - self.output).data.squeeze(), filename)
         imarr = t.abs(self.target - self.output).data.squeeze().cpu().numpy()
-        _image_save(filename, imarr, 'diff')
+        image_save(filename, imarr, 'diff')
 
     def save_heatmap(self, filename):
         ''' Make a heatmap of the absolute sum of the convolution kernels

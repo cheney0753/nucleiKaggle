@@ -27,9 +27,10 @@ from matplotlib import pyplot as plt
 import time
 #from sklearn import cluster
 #%%
+import nuclei.utils.postprocess as pproc
 
 now = datetime.datetime.now()
-plt.switch_backend('QT5Agg')
+#plt.switch_backend('QT5Agg')
 #plt.ioff()
 IMG_CHANNELS = 3
  
@@ -67,11 +68,9 @@ if isTest:
 else:
     data_dir = os.path.join( cwdir, os.pardir, 'data')
     
-print('Wring merged masks and eroded masks to: ', os.path.abspath( data_dir))    
     
 stage_label = 'stage1'
 
-clock = time.time()
 
 #% load the training files 
 allimagepath = glob.glob(os.path.join( data_dir, '{}_*'.format(stage_label),
@@ -105,13 +104,14 @@ train_labels['EncodedPixels'] = train_labels['EncodedPixels'].map(lambda en: [x 
 #%%
 
 def compare_rle(tl_rles, train_row_rles):
+    
     tl_rles = sorted(tl_rles, key = lambda x: int(x[0]))
     
     train_row_rles = sorted(train_row_rles, key = lambda x: int(x[0]))
     
     for tl, tr in zip(tl_rles, train_row_rles):
-        print(tl[0], tr[0])
-    match, mismatch = 0, 0
+#        print(tl[0], tr[0])
+        match, mismatch = 0, 0
     for img_rle, train_rle in zip(train_row_rles, tl_rles):
         for i_x, i_y in zip(img_rle, train_rle):
             if int(i_x) == int(i_y):
@@ -234,12 +234,15 @@ for n_group, n_rows in train_df.groupby(group_cols):
     
     eroded_masks = (io.imread(c_row['eroded_masks'][0])/255).astype(int)
     
-    tl_rles = train_labels.query('ImageId=="{}"'.format(n_rows['ImageId'].iloc[0]))['EncodedPixels'].values.tolist()
+    true_rles = train_labels.query('ImageId=="{}"'.format(n_rows['ImageId'].iloc[0]))['EncodedPixels'].values.tolist()
     
-    cb_rle, lab_img = rle_combined( merged_masks, eroded_masks)
-    cb_rle = img2rle( c_row['colored_masks'].astype(int))
-    result.append( compare_rle( tl_rles, cb_rle))
+#    tl_rles = pproc.img2rle( label_combined( merged_masks, eroded_masks))
+    print((measure.label( eroded_masks)).max())
+    tl_rles = pproc.img2rle( pproc.combined_label( merged_masks, eroded_masks, window_size=20))
+#    cb_rle = pproc.img2rle( c_row['colored_masks'].astype(int))
+    print(len(tl_rles), len(true_rles))
+    result.append( compare_rle( tl_rles, true_rles))
   
     
-    print('runtime is: ', time.time() - clock)
+#    print('runtime is: ', time.time() - clock)
  

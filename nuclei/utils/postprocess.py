@@ -12,9 +12,9 @@ from skimage import morphology,io, transform, measure
 from scipy import ndimage as ndi
 
 __all__ = ('rle_encoding', 'img2rle', 'compare_rle', 'watershed_label',
-           'watershed_rle', 'combined_label','combined_rle' , 'clean_mask')
+           'watershed_rle', 'combined_label','label2rle' , 'clean_mask')
 
-isPrint = False
+isPrint = True
 def rle_encoding( image):
     """ Encode a binary image to rle"""
     
@@ -38,7 +38,9 @@ def img2rle(lab_img):
     for i, rle in enumerate(rle_list):
         if len(rle) == 0:
             rle_list.pop(i)
-            
+
+    rle_list = sorted(rle_list, key = lambda x: int(x[0]))
+
     return rle_list
 
 def separate_masks(lab_img):
@@ -95,7 +97,12 @@ def watershed_rle(img, centroids, cut_off = 0.5):
         
     return img2rle(lab_img)
 
-def combined_label(merged_masks, eroded_masks, window_size = 8):
+def _fast_get_coordinate( mask, wr, wc):
+    return _get_coordinate( mask[wr[0]:wr[1], wc[0]:wc[1]]) + [wr[0], wc[0]]
+    
+    
+
+def combined_label(merged_masks, eroded_masks, window_size = 10):
     """
     Label the masks first given the eroded_masks, then label the mismatching pixels using the labels
     """
@@ -115,7 +122,14 @@ def combined_label(merged_masks, eroded_masks, window_size = 8):
     clock = time.time()
     
     img_shape = eroded_masks.shape
-    mask_window = np.zeros( img_shape)
+#    mask_window = np.zeros( img_shape)
+    
+    if isPrint:
+        print( 'Combine erode masks for {} labels'.format(lab_img.max()),  'for {} pixels'.format(bd_pixels.shape[0]))
+        
+    lab_img_list = {i: (lab_img == i).astype(int) for i in range(1, lab_img.max()+1)}
+    
+    max_lab = lab_img.max()
     
     for ip in range(bd_pixels.shape[0]):
         pix = bd_pixels[ip,]
@@ -123,22 +137,24 @@ def combined_label(merged_masks, eroded_masks, window_size = 8):
         dist = sys.maxsize
         lab = 0
         
-        mask_window.fill(0)
+#        mask_window.fill(0)
         wr = (max(0 , pix[0]-window_size//2 ), min(img_shape[0], pix[0]+window_size//2 ))
         wc = (max(0 , pix[1]-window_size//2 ), min(img_shape[1], pix[1]+window_size//2 ))
 
-        mask_window[wr[0]:wr[1], wc[0]:wc[1]] = 1
+#        mask_window[wr[0]:wr[1], wc[0]:wc[1]] = 1
         
-        for i in range(1, lab_img.max()+1):
+        
+        for i in range(1, max_lab+1):
             # apply a masking window to the mask of label i
-            mkimg = (lab_img == i) * mask_window
-            if mkimg.max()==0:
+#            mkimg = lab_img_list[i] * mask_window
+#            if mkimg.max()==0:
+#                continue
+#            pix_lab = _get_coordinate( mkimg)
+            pix_lab = _fast_get_coordinate( lab_img_list[i], wr, wc )               
+#            pix_til = np.tile( pix, (pix_lab.shape[0], 1))
+            if pix_lab.size == 0:
                 continue
-            
-            pix_lab = _get_coordinate( mkimg)               
-            pix_til = np.tile( pix, (pix_lab.shape[0], 1))
-            
-            dist_arr = pix_til-pix_lab
+            dist_arr = pix-pix_lab
             dd = (( dist_arr * dist_arr).sum(axis = 1) **0.5 ).sum()/dist_arr.shape[0]
 
             if dist > dd:
@@ -155,7 +171,7 @@ def combined_label(merged_masks, eroded_masks, window_size = 8):
 
     return comb_img.astype(int)
 
-def combined_rle(lab_img):
+def label2rle(lab_img):
     
     #lab_img = combined_label(merged_masks, eroded_masks)
     
